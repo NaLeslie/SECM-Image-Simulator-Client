@@ -44,7 +44,7 @@ public class DeconvUtilMain {
     }
     
     static double[][] convolve2D(double[][] f, double[][] h){
-        
+        return new double[][]{{}};
     }
     
     /**
@@ -89,7 +89,7 @@ public class DeconvUtilMain {
     }
     
     static double[][] fastFourierTransform(double[] data){
-        
+        return new double[][]{{}};
     }
     
     /**
