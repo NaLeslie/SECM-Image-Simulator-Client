@@ -1,7 +1,10 @@
 package deconvolutionutilities;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Calendar;
 import java.util.Scanner;
@@ -40,6 +43,10 @@ public class DeconvUtilMain {
         // TODO code application logic here
     }
     
+    static double[][] convolve2D(double[][] f, double[][] h){
+        
+    }
+    
     /**
      * Converts a scaled current signal to the approximate logk value that may have generated it.
      * This serves as an inverse for {@link #logkToCurrent(double)}.
@@ -71,14 +78,18 @@ public class DeconvUtilMain {
     }
     
     /**
-     * Overwrites {@link #DATA_FILE_PATH}
+     * Overwrites {@link #FILE_PATH_DATA}
      * @throws FileNotFoundException 
      */
     static void eraseDataFile() throws FileNotFoundException{
-        File f = new File(DATA_FILE_PATH);
+        File f = new File(FILE_PATH_DATA);
         PrintWriter pw = new PrintWriter(f);
         pw.print("%");
         pw.close();
+    }
+    
+    static double[][] fastFourierTransform(double[] data){
+        
     }
     
     /**
@@ -109,12 +120,12 @@ public class DeconvUtilMain {
     }
     
     /**
-     * Reads from the rightmost column of {@link #DATA_FILE_PATH} and returns the result as an array of doubles
+     * Reads from the rightmost column of {@link #FILE_PATH_DATA} and returns the result as an array of doubles
      * @return 
      * @throws FileNotFoundException 
      */
     static double[] readData() throws FileNotFoundException{
-        File f = new File(DATA_FILE_PATH);
+        File f = new File(FILE_PATH_DATA);
         Scanner s = new Scanner(f);
         int count = 0;
         while(s.hasNextLine()){
@@ -143,7 +154,7 @@ public class DeconvUtilMain {
      * Handles the simulation and data processing that will be used by {@link #logkToCurrent(double)} to convert rate constants to currents.
      * @param L The normalized tip to substrate distance.
      */
-    static void simulateKCurve(double L, boolean verbose) throws FileNotFoundException{
+    static void simulateKCurve(double L, boolean verbose) throws IOException{
         double[] xspace = new double[]{0, 200, 400};
         double[] yspace = new double[]{0, 200, 400};
         double[][] grid_data = new double[][]{{1, 1, 1},
@@ -152,10 +163,12 @@ public class DeconvUtilMain {
         
         double amplitude = LOGK_HIGH - LOGK_LOW;
         int k_datapoints = (int)amplitude;
+        double[] logk_data = new double[k_datapoints];
         double[] k_data = new double[k_datapoints];
         for(int i = 0; i < k_datapoints; i++){
             double mult = ((double)i)/((double)k_datapoints);
-            k_data[i] = Math.pow(10, mult*amplitude + LOGK_LOW);
+            logk_data[i] = mult*amplitude + LOGK_LOW;
+            k_data[i] = Math.pow(10, logk_data[i]);
         }
         
         writeReactivityFile(xspace, yspace, grid_data);
@@ -171,19 +184,42 @@ public class DeconvUtilMain {
         }
     }
     
-    static void writeKCurve(double[] k_data, double[] currents){
-        //TODO
+    static void writeKCurve(double[] k_data, double[] currents) throws FileNotFoundException{
+        File f = new File(FILE_PATH_KLOG);
+        PrintWriter pw = new PrintWriter(f);
+        pw.print("#log10(k/1[m/s]), i[A]");
+        for(int i = 0; i < k_data.length; i++){
+            pw.print(String.format("\n%f,%f", k_data[i], currents[i]));
+        }
+        pw.close();
     }
     
-    static void writeReactivityFile(double[] xs, double[] ys, double[][] logks){
-        //TODO
+    static void writeReactivityFile(double[] xs, double[] ys, double[][] logks) throws IOException{
+        File f = new File(FILE_PATH_REACTIVITY);
+        PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(f)));
+        for(int x = 0; x < xs.length; x++){
+            for(int y = 0; y < ys.length; y++){
+                double k = Math.pow(10, logks[x][y]);
+                if(x != 0 || y != 0){
+                    pw.print("\n" + xs[x] + "," + ys[y] + "," + k);
+                }
+                else{
+                    pw.print(xs[x] + "," + ys[y] + "," + k);
+                }
+            }
+        }
+        pw.close();
     }
     
     static double[] ki_currents;
     
     static double[] ki_logks;
     
-    static final String DATA_FILE_PATH = "data.txt";
+    static final String FILE_PATH_DATA = "data.txt";
+    
+    static final String FILE_PATH_KLOG = "kcurve.csv";
+    
+    static final String FILE_PATH_REACTIVITY = "func.csv";
     
     /**
      * The logk value above which no change in current is expected
