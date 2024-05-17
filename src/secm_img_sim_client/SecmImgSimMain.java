@@ -1,11 +1,14 @@
 package secm_img_sim_client;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.Socket;
 import java.util.Calendar;
 import java.util.Scanner;
 
@@ -39,12 +42,48 @@ public class SecmImgSimMain {
     /**
      * @param args the command line arguments
      */
-    public static void main(String[] args) {
+    public static void main(String[] args){
         // TODO code application logic here
-    }
-    
-    static double[][] convolve2D(double[][] f, double[][] h){
-        return new double[][]{{}};
+        /*
+        https://docs.oracle.com/javase/tutorial/networking/sockets/readingWriting.html
+        https://docs.oracle.com/javase/tutorial/networking/sockets/clientServer.html
+        https://docs.oracle.com/javase/8/docs/api/java/net/Socket.html
+        */
+        Socket deconv_service_socket = null;
+        PrintWriter sender = null;
+        BufferedReader receiver = null;
+        
+        try{
+            deconv_service_socket = new Socket(HOST, PORT);
+            sender = new PrintWriter(deconv_service_socket.getOutputStream(), true);
+            receiver = new BufferedReader(new InputStreamReader(deconv_service_socket.getInputStream()));
+            
+        }catch(Exception e){
+            e.printStackTrace();
+        }finally{
+            if(sender != null){
+                try{
+                    sender.close();
+                }catch(Exception e){
+                    
+                }
+            }
+            if(receiver != null){
+                try{
+                    receiver.close();
+                }catch(IOException e){
+                    
+                }
+            }
+            if(deconv_service_socket != null){
+                try{
+                    deconv_service_socket.close();
+                }catch(IOException e){
+                    
+                }
+            }
+        }
+        
     }
     
     /**
@@ -86,10 +125,6 @@ public class SecmImgSimMain {
         PrintWriter pw = new PrintWriter(f);
         pw.print("%");
         pw.close();
-    }
-    
-    static double[][] fastFourierTransform(double[] data){
-        return new double[][]{{}};
     }
     
     /**
@@ -148,6 +183,18 @@ public class SecmImgSimMain {
         }
         s.close();
         return data;
+    }
+    
+    static void sendKCurve(PrintWriter sender, BufferedReader receiver, double[] logks, double[] currents){
+        
+    }
+    
+    static void sendKImage(PrintWriter sender, BufferedReader receiver, double[] xs, double[] ys, double[][] logkimg){
+        
+    }
+    
+    static void sendSecmImage(PrintWriter sender, BufferedReader receiver, double[] xs, double[] ys, double[][] currentimg){
+        
     }
     
     /**
@@ -222,6 +269,12 @@ public class SecmImgSimMain {
     static final String FILE_PATH_REACTIVITY = "func.csv";
     
     /**
+     * The host name for communicating with the deconvolution service server.
+     * Set to null (the for loopback)
+     */
+    static final String HOST = null;
+    
+    /**
      * The logk value above which no change in current is expected
      */
     static final double LOGK_HIGH = -2;
@@ -231,6 +284,10 @@ public class SecmImgSimMain {
      */
     static final double LOGK_LOW = -6;
     
+    /**
+     * The port to use for communicating with the deconvolution service server.
+     */
+    static final int PORT = 4091;
 }
 
 class Model{
