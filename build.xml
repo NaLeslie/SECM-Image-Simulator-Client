@@ -7,8 +7,8 @@
 <!-- the Compile on Save feature is turned off for the project. -->
 <!-- You can turn off the Compile on Save (or Deploy on Save) setting -->
 <!-- in the project's Project Properties dialog box.-->
-<project name="DeconvolutionUtilities" default="default" basedir=".">
-    <description>Builds, tests, and runs the project DeconvolutionUtilities.</description>
+<project name="SECM-Image-Simulator-Client" default="default" basedir=".">
+    <description>Builds, tests, and runs the project SECM-Image-Simulator-Client.</description>
     <import file="nbproject/build-impl.xml"/>
     <!--
 
@@ -58,7 +58,7 @@
 
     An example of overriding the target for project execution could look like this:
 
-        <target name="run" depends="DeconvolutionUtilities-impl.jar">
+        <target name="run" depends="SECM-Image-Simulator-Client-impl.jar">
             <exec dir="bin" executable="launcher.exe">
                 <arg file="${dist.jar}"/>
             </exec>
