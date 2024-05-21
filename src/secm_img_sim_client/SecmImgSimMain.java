@@ -9,8 +9,12 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Calendar;
 import java.util.Scanner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Collection of methods for attempts to use modified Richardson-Lucy (R-L)
@@ -139,10 +143,70 @@ public class SecmImgSimMain {
         int hour = cl.get(Calendar.HOUR_OF_DAY);
         int minute = cl.get(Calendar.MINUTE);
         int second = cl.get(Calendar.SECOND);
-        String date_time = String.format("[%04d-%02d-%02dT%02d:%02d:%02d]", year, month, day, hour, minute, second);
+        String date_time = String.format("%04d-%02d-%02dT%02d:%02d:%02d", year, month, day, hour, minute, second);
         return date_time;
     }
     
+    static byte[] hashCurve(double[] curve){
+        //convert curve to byte array
+        int len = 8*curve.length;
+        byte[] bytearray = new byte[len];
+        for(int i = 0; i < curve.length; i++){
+            long longi = Double.doubleToLongBits(curve[i]);
+            for(int ii = 0; ii < 8; ii++){
+                int indx = i*8 + ii;
+                bytearray[indx] = (byte)((longi >> ((7 - ii) * 8)) & 0xff);
+            }
+        }
+        //hash byte array
+        MessageDigest sha256;
+        try {
+            sha256 = MessageDigest.getInstance(HASH_ALGORITHM);
+            byte[] hash = sha256.digest(bytearray);
+            return hash;
+        } catch (NoSuchAlgorithmException ex) {
+            
+        }
+        
+        return new byte[0];
+    }
+    
+    static byte[] hashImage(double[][] image){
+        //convert image to byte array
+        int xlen = image.length;
+        int ylen = image[0].length;
+        int total_len = xlen*ylen*8;
+        byte[] bytearray = new byte[total_len];
+        for(int x = 0; x < xlen; x++){
+            int xcontrib = x*ylen;
+            for(int y = 0; y < ylen; y++){
+                long longxy = Double.doubleToLongBits(image[x][y]);
+                for(int ii = 0; ii < 8; ii++){
+                    int indx = (xcontrib + y)*8 + ii;
+                    bytearray[indx] = (byte)((longxy >> ((7 - ii) * 8)) & 0xff);
+                }
+            }
+        }
+        //hash byte array
+        MessageDigest sha256;
+        try {
+            sha256 = MessageDigest.getInstance(HASH_ALGORITHM);
+            byte[] hash = sha256.digest(bytearray);
+            return hash;
+        } catch (NoSuchAlgorithmException ex) {
+            
+        }
+        
+        return new byte[0];
+    }
+    
+    static String hashToString(byte[] hash){
+        String hash_string = "";
+        for(int i = 0; i < hash.length; i++){
+            hash_string = hash_string + String.format("%02x", hash[i]);
+        }
+        return hash_string;
+    }
     /**
      * Converts a logk for a spot at the surface to a scaled current that would 
      * be observed by a microelectrode above the surface.This function is inverted
@@ -152,6 +216,51 @@ public class SecmImgSimMain {
      */
     static double logkToCurrent(double logk){
         return 1;
+    }
+    
+    static void postSecmImage(PrintWriter sender, BufferedReader receiver, double[] xs, double[] ys, double[][] currentimg){
+        //POST SECM Image
+        //Listen for response
+        //Update kimage
+    }
+    
+    static void putKCurve(PrintWriter sender, BufferedReader receiver, double[] logks, double[] currents) throws IOException{
+        /*
+        HEAD kcurve
+            if 200 OK received compare recieved hash to curve's hash
+            if 204 No Content received OR the hashes do not match, send kurve data over
+        */
+        //HEAD kcurve
+        String CRLF = "\r\n";
+        String requestline = "HEAD k-curve HTTP/1.1";
+        String fields = "Date: " + getDateStamp();
+        //send head request
+        sender.print(requestline + CRLF + fields + CRLF + CRLF);
+        
+        //listen for response
+        boolean send_curve = true;
+        String status_line = receiver.readLine();
+        String[] status_line_tokens = status_line.split("\\s+");
+        //If an incorrect status message is recieved, or an unexpected status is received, throw an error
+        if(!status_line_tokens[0].equals("HTTP/1.1")){
+            throw new IOException("Status line did not start with HTTP/1.1");
+        }
+        if(!status_line_tokens[1].equals("200") && !status_line_tokens[1].equals("404")){
+            throw new IOException("Received unexpected status code. Expected: (200|404); Received: " + status_line_tokens[1]);
+        }
+        //if 200 OK received compare recieved hash to curve's hash
+        //if 404 Not Found received OR the hashes do not match, send kurve data over
+    }
+    
+    static void putKImage(PrintWriter sender, BufferedReader receiver, double[] xs, double[] ys, double[][] logkimg){
+        /*
+        HEAD image
+            if 200 OK received compare recieved hash to image's hash
+            if 204 No Content received OR the hashes do not match, send kurve data over
+        */
+        //HEAD image
+        //if 200 OK received compare recieved hash to image's hash
+        //if 404 Not Found received OR the hashes do not match, send kurve data over
     }
     
     /**
@@ -183,18 +292,6 @@ public class SecmImgSimMain {
         }
         s.close();
         return data;
-    }
-    
-    static void sendKCurve(PrintWriter sender, BufferedReader receiver, double[] logks, double[] currents){
-        
-    }
-    
-    static void sendKImage(PrintWriter sender, BufferedReader receiver, double[] xs, double[] ys, double[][] logkimg){
-        
-    }
-    
-    static void sendSecmImage(PrintWriter sender, BufferedReader receiver, double[] xs, double[] ys, double[][] currentimg){
-        
     }
     
     /**
@@ -267,6 +364,8 @@ public class SecmImgSimMain {
     static final String FILE_PATH_KLOG = "kcurve.csv";
     
     static final String FILE_PATH_REACTIVITY = "func.csv";
+    
+    static final String HASH_ALGORITHM = "SHA-256";
     
     /**
      * The host name for communicating with the deconvolution service server.
