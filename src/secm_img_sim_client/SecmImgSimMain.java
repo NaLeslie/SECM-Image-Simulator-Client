@@ -1,20 +1,21 @@
 package secm_img_sim_client;
 
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Calendar;
 import java.util.Scanner;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Collection of methods for attempts to use modified Richardson-Lucy (R-L)
@@ -54,13 +55,13 @@ public class SecmImgSimMain {
         https://docs.oracle.com/javase/8/docs/api/java/net/Socket.html
         */
         Socket deconv_service_socket = null;
-        PrintWriter sender = null;
-        BufferedReader receiver = null;
+        OutputStream sender = null;
+        InputStream receiver = null;
         
         try{
             deconv_service_socket = new Socket(HOST, PORT);
-            sender = new PrintWriter(deconv_service_socket.getOutputStream(), true);
-            receiver = new BufferedReader(new InputStreamReader(deconv_service_socket.getInputStream()));
+            sender = deconv_service_socket.getOutputStream();
+            receiver = deconv_service_socket.getInputStream();
             
         }catch(Exception e){
             e.printStackTrace();
@@ -120,6 +121,100 @@ public class SecmImgSimMain {
         return candidate_logk;
     }
     
+    static byte[] encodeCurve(double[] logks, double[] currents){
+        /*
+        "len: %d\r\n", len
+        [Binary data containing logks] + "\r\n"
+        [Binary data containing currents] + "\r\n"
+        */
+        int len = logks.length;
+        String first_line = String.format("len: %d\r\n", len);
+        String crlf = "\r\n";
+        
+        byte[] first_line_data = first_line.getBytes(CHARSET);
+        byte[] crlf_data = crlf.getBytes(CHARSET);
+        byte[] logk_data = new byte[len*8];
+        byte[] current_data = new byte[len*8];
+        
+        ByteBuffer logk_bb = ByteBuffer.wrap(logk_data).order(ENDIANNESS);
+        ByteBuffer current_bb = ByteBuffer.wrap(current_data).order(ENDIANNESS);
+        
+        for(int i = 0; i < logks.length; i++){
+            logk_bb.putDouble(i*8, logks[i]);
+            current_bb.putDouble(i*8, currents[i]);
+        }
+        
+        //Append the data together
+        int block_length = first_line_data.length + logk_data.length + current_data.length + 2*crlf_data.length;
+        byte[] block_data = new byte[block_length];
+        int running_length = 0;
+        System.arraycopy(first_line_data, 0, block_data, 0, first_line_data.length);
+        running_length += first_line_data.length;
+        System.arraycopy(logk_data, 0, block_data, running_length, logk_data.length);
+        running_length += logk_data.length;
+        System.arraycopy(crlf_data, 0, block_data, running_length, crlf_data.length);
+        running_length += crlf_data.length;
+        System.arraycopy(current_data, 0, block_data, running_length, current_data.length);
+        running_length += current_data.length;
+        System.arraycopy(crlf_data, 0, block_data, running_length, crlf_data.length);
+        return block_data;
+    }
+    
+    static byte[] encodeImage(double[] xs, double[] ys, double[][] signalimg){
+        /*
+        "len: %d\r\n", len
+        [Binary data containing logks] + "\r\n"
+        [Binary data containing currents] + "\r\n"
+        */
+        int xlen = xs.length;
+        int ylen = ys.length;
+        String size_lines = String.format("xlen: %d\r\nylen: %d\r\n", xlen, ylen);
+        String crlf = "\r\n";
+        
+        byte[] size_line_data = size_lines.getBytes(CHARSET);
+        byte[] crlf_data = crlf.getBytes(CHARSET);
+        byte[] x_data = new byte[xlen*8];
+        byte[] y_data = new byte[ylen*8];
+        byte[] img_data = new byte[xlen*ylen*8];
+        
+        ByteBuffer x_bb = ByteBuffer.wrap(x_data).order(ENDIANNESS);
+        ByteBuffer y_bb = ByteBuffer.wrap(y_data).order(ENDIANNESS);
+        ByteBuffer img_bb = ByteBuffer.wrap(img_data).order(ENDIANNESS);
+        
+        for(int i = 0; i < xs.length; i++){
+            x_bb.putDouble(i*8, xs[i]);
+        }
+        for(int i = 0; i < ys.length; i++){
+            y_bb.putDouble(i*8, ys[i]);
+        }
+        for(int x = 0; x < xlen; x++){
+            int xcontrib = x*ylen;
+            for(int y = 0; y < ylen; y++){
+                int indx = xcontrib + y;
+                img_bb.putDouble(indx*8, signalimg[x][y]);
+            }
+        }
+        
+        //Append the data together
+        int block_length = size_line_data.length + x_data.length + y_data.length + img_data.length + 3*crlf_data.length;
+        byte[] block_data = new byte[block_length];
+        int running_length = 0;
+        System.arraycopy(size_line_data, 0, block_data, 0, size_line_data.length);
+        running_length += size_line_data.length;
+        System.arraycopy(x_data, 0, block_data, running_length, x_data.length);
+        running_length += x_data.length;
+        System.arraycopy(crlf_data, 0, block_data, running_length, crlf_data.length);
+        running_length += crlf_data.length;
+        System.arraycopy(y_data, 0, block_data, running_length, y_data.length);
+        running_length += y_data.length;
+        System.arraycopy(crlf_data, 0, block_data, running_length, crlf_data.length);
+        running_length += crlf_data.length;
+        System.arraycopy(img_data, 0, block_data, running_length, img_data.length);
+        running_length += img_data.length;
+        System.arraycopy(crlf_data, 0, block_data, running_length, crlf_data.length);
+        return block_data;
+    }
+    
     /**
      * Overwrites {@link #FILE_PATH_DATA}
      * @throws FileNotFoundException 
@@ -147,16 +242,93 @@ public class SecmImgSimMain {
         return date_time;
     }
     
+    static String getETag(OutputStream sender, InputStream receiver, String content_id) throws IOException{
+        String CRLF = "\r\n";
+        String requestline = "HEAD " + content_id + " HTTP/1.1";
+        String fields = "Date: " + getDateStamp();
+        //send head request
+        String request_full = requestline + CRLF + fields + CRLF + CRLF;
+        sender.write(request_full.getBytes(CHARSET));
+        sender.flush(); // make sure everything gets sent
+        
+        //listen for response
+        String response_status_line = "";
+        
+        int currentbyte = -1;
+        int lastbyte = -1;
+        boolean continueparsing = true;
+        int characters = 0;
+        
+        while((currentbyte = receiver.read()) >= 0 && continueparsing && characters < MAX_NON_BODY_LENGTH){
+            if(currentbyte == 10 && lastbyte == 13){
+                continueparsing = false;
+            }
+            else{
+                if(lastbyte >= 0){
+                    response_status_line = response_status_line + (char)lastbyte;
+                }
+            }
+            lastbyte = currentbyte;
+            characters ++;
+        }
+        
+        String[] status_line_tokens = response_status_line.split("\\s+");
+        //If an incorrect status message is recieved, or an unexpected status is received, throw an error
+        if(!status_line_tokens[0].equals("HTTP/1.1")){
+            throw new IOException("Status line did not start with HTTP/1.1");
+        }
+        if(!status_line_tokens[1].equals("200") && !status_line_tokens[1].equals("404")){
+            throw new IOException("Received unexpected status code. Expected: (200|404); Received: " + status_line_tokens[1]);
+        }
+        
+        //read the rest of the message to get the ETag or clear the receiver.
+        continueparsing = true;
+        String etag = null;
+        int chars_since_crlf = 0;//characters since a carriage-return line-feed
+        characters = 0;
+        String last_response_field_line = "";
+        lastbyte = -1;
+        while((currentbyte = receiver.read()) >= 0 && continueparsing && characters < MAX_NON_BODY_LENGTH){
+            if(currentbyte == 10 && lastbyte == 13){
+                if(chars_since_crlf == 1){
+                    continueparsing = false;
+                }
+                chars_since_crlf = -1;
+                if(last_response_field_line.startsWith("ETag: ")){
+                    if(etag == null){
+                        etag = last_response_field_line.substring(6).trim();
+                    }
+                    else{
+                        throw new IOException("Encountered more than one ETag field.");
+                    }
+                }
+                last_response_field_line = "";
+            }
+            else{
+                if(lastbyte >= 0){
+                    last_response_field_line = last_response_field_line + (char)lastbyte;
+                }
+            }
+            lastbyte = currentbyte;
+            characters ++;
+            chars_since_crlf ++;
+        }
+        
+        if(characters >= MAX_NON_BODY_LENGTH){
+            throw new IOException("Response from server too long.");
+        }
+        
+        //process the result
+        return etag;
+    }
+    
     static byte[] hashCurve(double[] curve){
         //convert curve to byte array
         int len = 8*curve.length;
         byte[] bytearray = new byte[len];
+        ByteBuffer bb = ByteBuffer.wrap(bytearray).order(ENDIANNESS);
         for(int i = 0; i < curve.length; i++){
-            long longi = Double.doubleToLongBits(curve[i]);
-            for(int ii = 0; ii < 8; ii++){
-                int indx = i*8 + ii;
-                bytearray[indx] = (byte)((longi >> ((7 - ii) * 8)) & 0xff);
-            }
+            bb.putDouble(i*8, curve[i]);
         }
         //hash byte array
         MessageDigest sha256;
@@ -177,14 +349,12 @@ public class SecmImgSimMain {
         int ylen = image[0].length;
         int total_len = xlen*ylen*8;
         byte[] bytearray = new byte[total_len];
+        ByteBuffer bb = ByteBuffer.wrap(bytearray).order(ENDIANNESS);
         for(int x = 0; x < xlen; x++){
             int xcontrib = x*ylen;
             for(int y = 0; y < ylen; y++){
-                long longxy = Double.doubleToLongBits(image[x][y]);
-                for(int ii = 0; ii < 8; ii++){
-                    int indx = (xcontrib + y)*8 + ii;
-                    bytearray[indx] = (byte)((longxy >> ((7 - ii) * 8)) & 0xff);
-                }
+                int indx = xcontrib + y;
+                bb.putDouble(indx*8, image[x][y]);
             }
         }
         //hash byte array
@@ -207,6 +377,7 @@ public class SecmImgSimMain {
         }
         return hash_string;
     }
+    
     /**
      * Converts a logk for a spot at the surface to a scaled current that would 
      * be observed by a microelectrode above the surface.This function is inverted
@@ -218,41 +389,97 @@ public class SecmImgSimMain {
         return 1;
     }
     
-    static void postSecmImage(PrintWriter sender, BufferedReader receiver, double[] xs, double[] ys, double[][] currentimg){
+    static void postSecmImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] currentimg){
         //POST SECM Image
         //Listen for response
         //Update kimage
     }
     
-    static void putKCurve(PrintWriter sender, BufferedReader receiver, double[] logks, double[] currents) throws IOException{
+    static void processPutResponse(InputStream receiver) throws IOException{
+        //listen for response
+        String response_status_line = "";
+        
+        int currentbyte = -1;
+        int lastbyte = -1;
+        boolean continueparsing = true;
+        int characters = 0;
+        
+        while((currentbyte = receiver.read()) >= 0 && continueparsing && characters < MAX_NON_BODY_LENGTH){
+            if(currentbyte == 10 && lastbyte == 13){
+                continueparsing = false;
+            }
+            else{
+                if(lastbyte >= 0){
+                    response_status_line = response_status_line + (char)lastbyte;
+                }
+            }
+            lastbyte = currentbyte;
+            characters ++;
+        }
+        
+        String[] status_line_tokens = response_status_line.split("\\s+");
+        //If an incorrect status message is recieved, or an unexpected status is received, throw an error
+        if(!status_line_tokens[0].equals("HTTP/1.1")){
+            throw new IOException("Status line did not start with HTTP/1.1");
+        }
+        if(!status_line_tokens[1].equals("200")){
+            throw new IOException("Received unexpected status code to PUT request. Expected: 200; Received: " + status_line_tokens[1]);
+        }
+        
+        continueparsing = true;
+        int chars_since_crlf = 0;//characters since a carriage-return line-feed
+        characters = 0;
+        lastbyte = -1;
+        while((currentbyte = receiver.read()) >= 0 && continueparsing && characters < MAX_NON_BODY_LENGTH){
+            if(currentbyte == 10 && lastbyte == 13){
+                if(chars_since_crlf == 1){
+                    continueparsing = false;
+                }
+                chars_since_crlf = -1;
+            }
+            lastbyte = currentbyte;
+            characters ++;
+            chars_since_crlf ++;
+        }
+        
+        if(characters >= MAX_NON_BODY_LENGTH){
+            throw new IOException("Response from server too long.");
+        }
+    }
+    
+    static void putKCurve(OutputStream sender, InputStream receiver, double[] logks, double[] currents) throws IOException{
         /*
         HEAD kcurve
             if 200 OK received compare recieved hash to curve's hash
             if 204 No Content received OR the hashes do not match, send kurve data over
         */
         //HEAD kcurve
-        String CRLF = "\r\n";
-        String requestline = "HEAD k-curve HTTP/1.1";
-        String fields = "Date: " + getDateStamp();
-        //send head request
-        sender.print(requestline + CRLF + fields + CRLF + CRLF);
-        
-        //listen for response
-        boolean send_curve = true;
-        String status_line = receiver.readLine();
-        String[] status_line_tokens = status_line.split("\\s+");
-        //If an incorrect status message is recieved, or an unexpected status is received, throw an error
-        if(!status_line_tokens[0].equals("HTTP/1.1")){
-            throw new IOException("Status line did not start with HTTP/1.1");
-        }
-        if(!status_line_tokens[1].equals("200") && !status_line_tokens[1].equals("404")){
-            throw new IOException("Received unexpected status code. Expected: (200|404); Received: " + status_line_tokens[1]);
-        }
+        String etag_new = hashToString(hashCurve(currents));
+        String etag_cached = getETag(sender, receiver, "k-curve");
         //if 200 OK received compare recieved hash to curve's hash
         //if 404 Not Found received OR the hashes do not match, send kurve data over
+        boolean send_curve = true;
+        if(etag_cached != null){
+            send_curve = !etag_cached.equals(etag_new);
+        }
+        if(send_curve){
+            byte[] curve_data = encodeCurve(logks, currents);
+            int content_length = curve_data.length;
+            String put_header = "PUT k-curve HTTP/1.1\r\n" 
+                    + "Date: " + getDateStamp() + "\r\n"
+                    + "ETag: " + etag_new + "\r\n"
+                    + "Content-Length: " + content_length + "\r\n"
+                    + "Content-Type: IMAGE\r\n"
+                    + "\r\n";
+            sender.write(put_header.getBytes(CHARSET));
+            sender.write(curve_data);
+            sender.flush();
+            
+            processPutResponse(receiver);
+        }
     }
     
-    static void putKImage(PrintWriter sender, BufferedReader receiver, double[] xs, double[] ys, double[][] logkimg){
+    static void putKImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] logkimg){
         /*
         HEAD image
             if 200 OK received compare recieved hash to image's hash
@@ -359,6 +586,10 @@ public class SecmImgSimMain {
     
     static double[] ki_logks;
     
+    static final Charset CHARSET = Charset.forName("US-ASCII");
+    
+    static final ByteOrder ENDIANNESS = ByteOrder.LITTLE_ENDIAN;
+    
     static final String FILE_PATH_DATA = "data.txt";
     
     static final String FILE_PATH_KLOG = "kcurve.csv";
@@ -382,6 +613,11 @@ public class SecmImgSimMain {
      * The logk value below which no change in current is expected
      */
     static final double LOGK_LOW = -6;
+    
+    /**
+     * The maximum length of the status line or the fields in HTTP message headers
+     */
+    static final int MAX_NON_BODY_LENGTH = 4000;
     
     /**
      * The port to use for communicating with the deconvolution service server.
