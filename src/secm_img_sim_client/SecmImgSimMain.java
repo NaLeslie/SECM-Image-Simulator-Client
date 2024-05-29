@@ -482,6 +482,22 @@ public class SecmImgSimMain {
         return 1;
     }
     
+    /**
+     * Sends a post-processing request to the server, sending along an SECM Image and awaiting a new k image to simulate.
+     * The server should either send 
+     * <ul>
+     * <li>A "200 OK" response with a new k image. In which case this function decodes the k image and writes new values to {@link #img_x_coordinates}, {@link #img_y_coordinates} and {@link #img_ks}.</li>
+     * <li>A "204 No Content" response indicating convergence. In which case this function sets {@link #img_x_coordinates}, {@link #img_y_coordinates} and {@link #img_ks} to null.</li>
+     * <li>Any other code indicating an error has occurred. In which case an IOException is thrown</li>
+     * </ul>
+     * 
+     * @param sender the OutputStream to the server.
+     * @param receiver the InputStream from the server.
+     * @param xs the x-coordinates for the current image.
+     * @param ys the y-coordinates for the current image.
+     * @param currentimg the current image. Indexed as <code>currentimg[x][y]</code>.
+     * @throws IOException Thrown when networking errors occur or an unexpected response is received from the server.
+     */
     static void postSecmImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] currentimg) throws IOException{
         //POST SECM Image
         String etag = hashToString(hashImage(currentimg));
@@ -523,8 +539,15 @@ public class SecmImgSimMain {
         if(!status_line_tokens[0].equals("HTTP/1.1")){
             throw new IOException("Status line did not start with HTTP/1.1");
         }
-        if(!status_line_tokens[1].equals("200")){
+        
+        if(!status_line_tokens[1].equals("200") || !status_line_tokens[1].equals("204")){
             throw new IOException("Received unexpected status code. Expected: 200; Received: " + status_line_tokens[1]);
+        }
+        else if(status_line_tokens[1].equals("204")){
+            img_x_coordinates = null;
+            img_y_coordinates = null;
+            img_ks = null;
+            return;
         }
         
         //read the rest of the message to get the ETag or clear the receiver.
