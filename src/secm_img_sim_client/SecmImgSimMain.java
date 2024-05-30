@@ -753,6 +753,13 @@ public class SecmImgSimMain {
         }
     }
     
+    /**
+     * Reads the response to PUT requests from the server, ensuring that the data was received correctly. 
+     * This serves to clear the server response from the InputStream and take no further action if everything operates correctly.
+     * If an incorrect response is received, an IOException will be thrown to halt this program.
+     * @param receiver The InputStream from the server.
+     * @throws IOException To be thrown if there are any errors that occur on the server side or in the case of an incorrect response from the server.
+     */
     static void processPutResponse(InputStream receiver) throws IOException{
         //listen for response
         String response_status_line = "";
@@ -805,6 +812,19 @@ public class SecmImgSimMain {
         }
     }
     
+    /**
+     * Handles the process of sending a PUT request for the k-curve to the server.
+     * This starts by calling {@link #getETag(java.io.OutputStream, java.io.InputStream, java.lang.String)} to check the copy of the k-curve on the server by making a HEAD request and comparing the ETag to the hash of the k-curve.
+     * If the ETag and hash match, the server is up-to-date and the data is not sent over.
+     * If the ETag does not match or a 404 Not Found response is received, a PUT request is made, sending the k-curve data on to the server.
+     * {@link #processPutResponse(java.io.InputStream)} is used to ensure the server received the data correctly.
+     * @param sender The OutputStream to the server.
+     * @param receiver The InputStream from the server.
+     * @param logks The logk data. Must have the same size as <code>currents</code>
+     * @param currents The current data. Must have the same size as <code>logks</code>
+     * @throws IOException Will be thrown if there are any errors when contacting the server or if an unexpected response is received.
+     * @see #getETag(java.io.OutputStream, java.io.InputStream, java.lang.String) 
+     */
     static void putKCurve(OutputStream sender, InputStream receiver, double[] logks, double[] currents) throws IOException{
         /*
         HEAD kcurve
@@ -837,6 +857,19 @@ public class SecmImgSimMain {
         }
     }
     
+    /**
+     * Handles the process of sending a PUT request for the k-image to the server.
+     * This starts by calling {@link #getETag(java.io.OutputStream, java.io.InputStream, java.lang.String)} to check the copy of the k-image on the server by making a HEAD request and comparing the ETag to the hash of the k-image.
+     * If the ETag and hash match, the server is up-to-date and the data is not sent over.
+     * If the ETag does not match or a 404 Not Found response is received, a PUT request is made, sending the k-image data on to the server.
+     * {@link #processPutResponse(java.io.InputStream)} is used to ensure the server received the data correctly.
+     * @param sender The OutputStream to the server.
+     * @param receiver The InputStream from the server.
+     * @param xs The x position data. Indexed as <code>xs[x]</code>.
+     * @param ys The y position data. Indexed as <code>ys[y]</code>.
+     * @param logkimg The k-image data. Indexed as <code>logkimg[x][y]</code>.
+     * @throws IOException Will be thrown if there are any errors when contacting the server or if an unexpected response is received.
+     */
     static void putKImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] logkimg) throws IOException{
         /*
         HEAD image
@@ -856,6 +889,51 @@ public class SecmImgSimMain {
             byte[] image_data = encodeImage(xs, ys, logkimg);
             int content_length = image_data.length;
             String put_header = "PUT k-image HTTP/1.1\r\n" 
+                    + "Date: " + getDateStamp() + "\r\n"
+                    + "ETag: " + etag_new + "\r\n"
+                    + "Content-Length: " + content_length + "\r\n"
+                    + "Content-Type: IMAGE\r\n"
+                    + "\r\n";
+            sender.write(put_header.getBytes(CHARSET));
+            sender.write(image_data);
+            sender.flush();
+            
+            processPutResponse(receiver);
+        }
+    }
+    
+    /**
+     * Handles the process of sending a PUT request for the k-image to the server.
+     * This starts by calling {@link #getETag(java.io.OutputStream, java.io.InputStream, java.lang.String)} to check the copy of the k-image on the server by making a HEAD request and comparing the ETag to the hash of the k-image.
+     * If the ETag and hash match, the server is up-to-date and the data is not sent over.
+     * If the ETag does not match or a 404 Not Found response is received, a PUT request is made, sending the k-image data on to the server.
+     * {@link #processPutResponse(java.io.InputStream)} is used to ensure the server received the data correctly.
+     * @param sender The OutputStream to the server.
+     * @param receiver The InputStream from the server.
+     * @param xs The x position data. Indexed as <code>xs[x]</code>.
+     * @param ys The y position data. Indexed as <code>ys[y]</code>.
+     * @param trueimg The true secm image data. Indexed as <code>trueimg[x][y]</code>.
+     * @throws IOException Will be thrown if there are any errors when contacting the server or if an unexpected response is received.
+     */
+    static void putTrueSecmImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] trueimg) throws IOException{
+        /*
+        HEAD image
+            if 200 OK received compare recieved hash to image's hash
+            if 204 No Content received OR the hashes do not match, send kurve data over
+        */
+        //HEAD image
+        String etag_new = hashToString(hashImage(trueimg));
+        String etag_cached = getETag(sender, receiver, "true-image");
+        //if 200 OK received compare recieved hash to curve's hash
+        //if 404 Not Found received OR the hashes do not match, send kurve data over
+        boolean send_image = true;
+        if(etag_cached != null){
+            send_image = !etag_cached.equals(etag_new);
+        }
+        if(send_image){
+            byte[] image_data = encodeImage(xs, ys, trueimg);
+            int content_length = image_data.length;
+            String put_header = "PUT true-image HTTP/1.1\r\n" 
                     + "Date: " + getDateStamp() + "\r\n"
                     + "ETag: " + etag_new + "\r\n"
                     + "Content-Length: " + content_length + "\r\n"
@@ -934,8 +1012,15 @@ public class SecmImgSimMain {
         }
     }
     
-    static void writeKCurve(double[] k_data, double[] currents) throws FileNotFoundException{
+    /**
+     * Writes k-curve data to {@link #FILE_PATH_KLOG} in a comma separated values (csv) format.
+     * @param k_data The logk data. Must have the same size as <code>currents</code>
+     * @param currents The current data. Must have the same size as <code>k_data</code>
+     * @throws IOException If the {@link #FILE_PATH_KLOG} cannot be created or written to.
+     */
+    static void writeKCurve(double[] k_data, double[] currents) throws IOException{
         File f = new File(FILE_PATH_KLOG);
+        f.createNewFile();
         PrintWriter pw = new PrintWriter(f);
         pw.print("#log10(k/1[m/s]), i[A]");
         for(int i = 0; i < k_data.length; i++){
@@ -944,8 +1029,17 @@ public class SecmImgSimMain {
         pw.close();
     }
     
+    /**
+     * Writes the reactivity map to a file that is read by the COMSOL simulation.
+     * {@link #FILE_PATH_REACTIVITY} controls where this data is written
+     * @param xs The x position data. Indexed as <code>xs[x]</code>.
+     * @param ys The y position data. Indexed as <code>ys[y]</code>.
+     * @param logks The k-image data. Indexed as <code>logks[x][y]</code>.
+     * @throws IOException If the {@link #FILE_PATH_KLOG} cannot be created or written to.
+     */
     static void writeReactivityFile(double[] xs, double[] ys, double[][] logks) throws IOException{
         File f = new File(FILE_PATH_REACTIVITY);
+        f.createNewFile();
         PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(f)));
         for(int x = 0; x < xs.length; x++){
             for(int y = 0; y < ys.length; y++){
@@ -961,26 +1055,60 @@ public class SecmImgSimMain {
         pw.close();
     }
     
+    /**
+     * Holds the currents from the logk-i curve.
+     */
     static double[] ki_currents;
     
+    /**
+     * Holds the logk data from the logk-i curve.
+     */
     static double[] ki_logks;
     
+    /**
+     * Holds the image data for the k-image. Indexed as <code>img_ks[x][y]</code>.
+     */
     static double[][] img_ks;
     
+    /**
+     * Holds the x-data for the k-image. Indexed as <code>img_x_coordinates[x]</code>.
+     */
     static double[] img_x_coordinates;
     
+    /**
+     * Holds the y-data for the k-image. Indexed as <code>img_y_coordinates[y]</code>.
+     */
     static double[] img_y_coordinates;
     
+    /**
+     * The Charset to be used when sending messages to and from the server.
+     */
     static final Charset CHARSET = Charset.forName("US-ASCII");
     
+    /**
+     * The ByteOrder to be used when encoding and decoding double to and from byte[]
+     */
     static final ByteOrder ENDIANNESS = ByteOrder.LITTLE_ENDIAN;
     
+    /**
+     * The file path for COMSOL's data output file
+     */
     static final String FILE_PATH_DATA = "data.txt";
     
+    /**
+     * The file path to which the logk-i curve will be written
+     */
     static final String FILE_PATH_KLOG = "kcurve.csv";
     
+    /**
+     * The file path to which  the k-image that COMSOL will use is to be written.
+     */
     static final String FILE_PATH_REACTIVITY = "func.csv";
     
+    /**
+     * The hashing algorithm to be used when generating ETags.
+     * @see java.security.MessageDigest#getInstance(java.lang.String) 
+     */
     static final String HASH_ALGORITHM = "SHA-256";
     
     /**
