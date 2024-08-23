@@ -565,7 +565,7 @@ public class SecmImgSimMain {
                 chars_since_crlf = -1;
                 if(last_response_field_line.startsWith("Content-Length: ")){
                     if(field_content_length == null){
-                        field_content_length = last_response_field_line.substring(6).trim();
+                        field_content_length = last_response_field_line.substring(15).trim();
                     }
                     else{
                         throw new IOException("Response header to POST contained more than one Content-Length field.");
