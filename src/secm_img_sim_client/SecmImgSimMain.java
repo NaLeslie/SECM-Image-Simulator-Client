@@ -17,6 +17,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.ListIterator;
+import java.util.Random;
 import java.util.Scanner;
 
 /**
@@ -32,7 +33,34 @@ public class SecmImgSimMain {
      * @param xpositions
      * @param ypositions 
      */
-    private static Model run(double L, double[] xpositions, double[] ypositions){
+    private static Model run(double a, double Rg, double D, double L, double[] xpositions, double[] ypositions){
+        Random r = new Random();
+        r.setSeed(1234567890);
+        double[] data = new double[]{
+            2.961349523707295E-11,
+            2.9759165579137625E-11,
+            3.113409413759452E-11,
+            3.9948202563772906E-11,
+            5.547861546411381E-11,
+            6.066082017877612E-11,
+            6.170878271140456E-11,
+            6.210256176777017E-11,
+            6.215263776910492E-11,
+            6.215733984352189E-11};
+        File of = new File(FILE_PATH_DATA);
+        int len = xpositions.length * ypositions.length;
+        try{
+            PrintWriter pw = new PrintWriter(of);
+            for(int i = 0; i < len; i++){
+                int indx = r.nextInt(data.length);
+                pw.println(data[indx]);
+            }
+            pw.close();
+        }
+        catch(Exception e){
+            
+        }
+        
         return new Model();
     }
     
@@ -42,7 +70,30 @@ public class SecmImgSimMain {
      * @param xposition
      * @param yposition 
      */
-    private static Model runk(double L, double xposition, double yposition, double[] ks){
+    private static Model runk(double a, double Rg, double D, double L, double xposition, double yposition, double[] ks){
+        double[] data = new double[]{
+            2.961349523707295E-11,
+            2.9759165579137625E-11,
+            3.113409413759452E-11,
+            3.9948202563772906E-11,
+            5.547861546411381E-11,
+            6.066082017877612E-11,
+            6.170878271140456E-11,
+            6.210256176777017E-11,
+            6.215263776910492E-11,
+            6.215733984352189E-11};
+        
+        File of = new File(FILE_PATH_DATA);
+        try{
+            PrintWriter pw = new PrintWriter(of);
+            for(int i = 0; i < ks.length; i++){
+                pw.println(data[i]);
+            }
+            pw.close();
+        }
+        catch(Exception e){
+            
+        }
         return new Model();
     }
     
@@ -50,7 +101,12 @@ public class SecmImgSimMain {
      * @param args the command line arguments
      */
     public static void main(String[] args){
-        // TODO code application logic here
+        
+        double L = 1.0; // Tip to substrate distance in a
+        double D = 6.7E-10; //Diffusion coefficient in [m^2/s]
+        double a = 2.35E-6; //ME radius in [m]
+        double Rg = 1.87; // glass radius in a
+        
         /*
         https://docs.oracle.com/javase/tutorial/networking/sockets/readingWriting.html
         https://docs.oracle.com/javase/tutorial/networking/sockets/clientServer.html
@@ -65,21 +121,32 @@ public class SecmImgSimMain {
             sender = deconv_service_socket.getOutputStream();
             receiver = deconv_service_socket.getInputStream();
             
-            //read secm image [ ]
+            //read secm image
+            String filepath = "C:\\Users\\Malak\\Documents\\NLeslie\\00_DECONV_SERVER\\Testenv1_Files\\Test_Pattern_1.csv";
+            readInstructionFile(filepath);
             
-            //simulate kcurves [ ]
+            //simulate kcurves
+            simulateKCurve(a, Rg, D, L, true);
             
-            //initialize kimage [ ]
+            //initialize kimage
+            initializeKappaImage();
             
-            //PUT kcurve [x]
+            //PUT kcurve
+            putKCurve(sender, receiver, ki_logks, ki_currents);
             
-            //PUT kimage [x]
+            //PUT kimage
+            putKImage(sender, receiver, img_x_coordinates, img_y_coordinates, img_kappas);
+            
+            //PUT true image
+            putTrueSecmImage(sender, receiver, img_x_coordinates, img_y_coordinates, img_true);
             
             //LOOP:
             
-                //simulate SECM image [ ]
+                //simulate SECM image
+                simulateImage(a, Rg, D, L);
 
                 //POST SECM image [x]
+                postSecmImage(sender, receiver, sim_x_coordinates, sim_y_coordinates, img_sim);
             
             //:END LOOP
             
@@ -112,28 +179,57 @@ public class SecmImgSimMain {
     }
     
     /**
-     * Converts a scaled current signal to the approximate logk value that may have generated it.
-     * This serves as an inverse for {@link #logkToCurrent(double)}.
-     * Newton's method is used to approximate this logk value.
-     * @param scaled_current The scaled current as a value between 0 and 1.
-     * @return the logk that will result in current when used as an argument for {@link #logkToCurrent(double)}.
+     * 
+     * @param list
+     * @param value 
      */
-    static double currentToLogk(double scaled_current){
-        double perturbation_logk = 0.01; //the perturbation to use when approximating the derivative for #logkToCurrent(double).
+    private static void addInOrder(LinkedList<Double> list, double value){
+        if(!list.isEmpty()){
+            ListIterator<Double> list_li = list.listIterator();
+            boolean placed = false;
+            while(list_li.hasNext() && !placed){
+                double current = list_li.next();
+                if(tolerantEquals(current, value, false)){
+                    placed = true;
+                }
+                else if (current > value){
+                    list_li.previous();
+                    list_li.add(value);
+                    placed = true;
+                }
+            }
+            if(!placed){
+                list_li.add(value);
+            }
+        }
+        else{
+            list.add(value);
+        }
+    }
+    
+    /**
+     * Converts a scaled current signal to the approximate logk value that may have generated it.
+     * This serves as an inverse for {@link #logKappaToCurrent(double)}.
+     * Newton's method is used to approximate this logk value.
+     * @param current The scaled current as a value between 0 and 1.
+     * @return the logk that will result in current when used as an argument for {@link #logKappaToCurrent(double)}.
+     */
+    static double currentToLogKappa(double current){
+        double perturbation_logk = 0.01; //the perturbation to use when approximating the derivative for #logKappaToCurrent(double).
         double threshold = 0.005; //the threshold for determining convergence (differences in candidate logk that fall below this value will be considered converged).
         int iterations = 8; //number of iterations of Newton's method
         
-        double candidate_logk = 0.5*(LOGK_HIGH - LOGK_LOW); //initial guess for logk (should be located in the sloped portion of the k-i curve).
+        double candidate_logk = 0.5*(LOG_KAPPA_HIGH - LOG_KAPPA_LOW); //initial guess for logk (should be located in the sloped portion of the k-i curve).
         double candidate_i;
         double derivative;
         double old_candidate;
         
         do{
             old_candidate = candidate_logk;
-            candidate_i = logkToCurrent(candidate_logk);
-            derivative = (logkToCurrent(candidate_logk + perturbation_logk) - candidate_i)/ perturbation_logk;
+            candidate_i = logKappaToCurrent(candidate_logk);
+            derivative = (logKappaToCurrent(candidate_logk + perturbation_logk) - candidate_i)/ perturbation_logk;
             
-            candidate_logk -= (candidate_i - scaled_current)/derivative;
+            candidate_logk -= (candidate_i - current)/derivative;
             
             iterations --;
         }while(iterations > 0 && Math.abs(old_candidate - candidate_logk) > threshold);
@@ -142,7 +238,7 @@ public class SecmImgSimMain {
     }
     
     /**
-     * Decodes the bytes representing a k-image from the server and puts the data into img_x_coordinates, img_y_coordinates, img_ks
+     * Decodes the bytes representing a k-image from the server and puts the data into img_x_coordinates, img_y_coordinates, img_kappas
      * @param encoded_image
      * @throws IOException 
      */
@@ -237,14 +333,14 @@ public class SecmImgSimMain {
         
         img_x_coordinates = new double[xlen];
         img_y_coordinates = new double[ylen];
-        img_ks = new double[xlen][ylen];
+        img_kappas = new double[xlen][ylen];
         
         for(int x = 0; x < xlen; x++){
             int xcontrib = x*ylen;
             img_x_coordinates[x] = x_bb.getDouble(x*8);
             for(int y = 0; y < ylen; y++){
                 int indx = (xcontrib + y)*8;
-                img_ks[x][y] = img_bb.getDouble(indx);
+                img_kappas[x][y] = img_bb.getDouble(indx);
             }
         }
         
@@ -392,6 +488,98 @@ public class SecmImgSimMain {
         PrintWriter pw = new PrintWriter(f);
         pw.print("%");
         pw.close();
+    }
+    
+    /**
+     * 
+     * @param array
+     * @param key
+     * @return 
+     */
+    private static int findEqual(double[] array, double key){
+        return findEqual(array, key, 0, array.length-1);
+    }
+    
+    /**
+     * 
+     * @param array
+     * @param key
+     * @param min
+     * @param max
+     * @return 
+     */
+    private static int findEqual(double[] array, double key, int min, int max){
+        boolean use_relative = false;
+        if(tolerantEquals(key, array[min], use_relative)){
+            return min;
+        }
+        else if(tolerantEquals(key, array[max], use_relative)){
+            return max;
+        }
+        else if(array[min] > key || array[max] < key){
+            return -1;
+        }
+        else{
+            int mid = (max - min) / 2 + min;
+            if(tolerantEquals(key, array[mid], use_relative)){
+                return mid;
+            }
+            else if(array[mid] < key){
+                return findEqual(array, key, mid, max);
+            }
+            else{
+                return findEqual(array, key, min, mid);
+            }
+        }
+    }
+    
+    /**
+     * Binary searches through an array to find the largest index such that array[index] &lt; value.
+     * Will return -1 if all elements of array are &gt; value
+     * @param array array of values sorted in ascending order.
+     * @param value the value that is being searched-for.
+     * @return 
+     */
+    private static int findLower(double[] array, double value){
+        if(array[0] > value){
+            return -1;
+        }
+        if(array[array.length - 1] < value){
+            return array.length - 1;
+        }
+        return findLower(array, value, 0, array.length - 1);
+    }
+    
+    /**
+     * USE {@link #findLower(double[], double) } instead.
+     * @param array
+     * @param value
+     * @param start
+     * @param stop
+     * @return 
+     */
+    private static int findLower(double[] array, double value, int start, int stop){
+        
+        if(stop - start == 1){
+            return start;
+        }
+        else if(stop - start == 2){
+            if(array[start + 1] < value){
+                return start + 1;
+            }
+            else{
+                return start;
+            }
+        }
+        else{
+            int mid = (stop - start)/2 + start;
+            if(array[mid] < value){
+                return findLower(array, value, mid, stop); 
+            }
+            else{
+                return findLower(array, value, start, mid);
+            }
+        }
     }
     
     /**
@@ -559,22 +747,54 @@ public class SecmImgSimMain {
     }
     
     /**
+     * Uses {@link #currentToLogKappa(double)} to convert {@link #img_true} into an initial estimate for {@link #img_kappas}.
+     */
+    private static void initializeKappaImage(){
+        int xlen = img_true.length;
+        int ylen = img_true[0].length;
+        img_kappas = new double[xlen][ylen];
+        for(int x = 0; x < xlen; x++){
+            for(int y = 0; y < ylen; y++){
+                img_kappas[x][y] = currentToLogKappa(img_true[x][y]);
+            }
+        }
+    }
+    
+    /**
      * Converts a logk for a spot at the surface to a scaled current that would 
      * be observed by a microelectrode above the surface.This function is inverted
-     * by {@link #currentToLogk(double)}.
+     * by {@link #currentToLogKappa(double)}.
      * @param logk The log rate constant
      * @return 
      */
-    private static double logkToCurrent(double logk){
-        return 1;
+    private static double logKappaToCurrent(double log_kappa){
+        int len_m1 = ki_logks.length - 1;
+        if(log_kappa > ki_logks[0] && log_kappa < ki_logks[len_m1]){
+            int lower = findLower(ki_logks, log_kappa);
+            double kappa_lower = ki_logks[lower];
+            double kappa_upper = ki_logks[lower + 1];
+            double current_lower = ki_currents[lower];
+            double current_upper = ki_currents[lower + 1];
+            
+            double kappa_distance = kappa_upper - kappa_lower;
+            double fact_lower = (log_kappa - kappa_lower)/kappa_distance;
+            double fact_upper = (kappa_upper - log_kappa)/kappa_distance;
+            return current_lower*fact_lower + current_upper*fact_upper;
+        }
+        else if(log_kappa <= ki_logks[0]){
+            return ki_currents[0];
+        }
+        else{
+            return ki_currents[len_m1];
+        }
     }
     
     /**
      * Sends a post-processing request to the server, sending along an SECM Image and awaiting a new k image to simulate.
      * The server should either send 
      * <ul>
-     * <li>A "200 OK" response with a new k image. In which case this function decodes the k image and writes new values to {@link #img_x_coordinates}, {@link #img_y_coordinates} and {@link #img_ks}.</li>
-     * <li>A "204 No Content" response indicating convergence. In which case this function sets {@link #img_x_coordinates}, {@link #img_y_coordinates} and {@link #img_ks} to null.</li>
+     * <li>A "200 OK" response with a new k image. In which case this function decodes the k image and writes new values to {@link #img_x_coordinates}, {@link #img_y_coordinates} and {@link #img_kappas}.</li>
+     * <li>A "204 No Content" response indicating convergence. In which case this function sets {@link #img_x_coordinates}, {@link #img_y_coordinates} and {@link #img_kappas} to null.</li>
      * <li>Any other code indicating an error has occurred. In which case an IOException is thrown</li>
      * </ul>
      * 
@@ -864,7 +1084,166 @@ public class SecmImgSimMain {
     }
     
     /**
-     * Reads one line of http traffic, returning all bytes in the line including the \r and \n
+     * Reads through the control file, pulling out information for the reactivity grid, the sampled points and the experimentally observed secm currents.
+     * This method instantiates:
+     * <ul>
+     * <li>{@link #grid}</li>
+     * <li>{@link #sample_xs}</li>
+     * <li>{@link #sample_ys}</li>
+     * <li>{@link #physical_xs}</li>
+     * <li>{@link #physical_ys}</li>
+     * <li>{@link #min_x}</li>
+     * <li>{@link #min_y}</li>
+     * </ul>
+     * @param filepath The path to the control file.
+     * @throws FileNotFoundException 
+     */
+    private static void readInstructionFile(String filepath) throws IOException{
+        File f = new File(filepath);
+        double[] samplexs;
+        double[] sampleys;
+        String sep = ",";
+        
+        Scanner s = new Scanner(f);
+        if(s.hasNextLine()){
+            String fl = s.nextLine();
+            if(fl.equalsIgnoreCase("##ENCODING: csv")){
+                sep = ",";
+            }
+            else if(fl.equalsIgnoreCase("##ENCODING: tsv")){
+                sep = "\t";
+            }
+            else{
+                throw new IOException("Unexpected file encoding.");
+            }
+        }
+        else{
+            throw new IOException("File contains no readable lines.");
+        }
+
+        //X header
+        int xstart = 0;
+        int xstep = 0;
+        int xnum = 0;
+        if(s.hasNextLine()){
+            String fl = s.nextLine();
+        }
+        else{
+            throw new IOException("File ended before x-header.");
+        }
+        if(s.hasNextLine()){
+            String fl = s.nextLine();
+            String[] tokens = fl.substring(1).trim().split(",");
+            xstart = Integer.parseInt(tokens[0]);
+            xstep = Integer.parseInt(tokens[1]);
+            xnum = Integer.parseInt(tokens[2]);
+        }
+        else{
+            throw new IOException("Error parsing x-header.");
+        }
+
+        //Y header
+        int ystart = 0;
+        int ystep = 0;
+        int ynum = 0;
+        if(s.hasNextLine()){
+            String fl = s.nextLine();
+        }
+        else{
+            throw new IOException("File ended before y-header.");
+        }
+        if(s.hasNextLine()){
+            String fl = s.nextLine();
+            String[] tokens = fl.substring(1).trim().split(",");
+            ystart = Integer.parseInt(tokens[0]);
+            ystep = Integer.parseInt(tokens[1]);
+            ynum = Integer.parseInt(tokens[2]);
+        }
+        else{
+            throw new IOException("Error parsing y-header.");
+        }
+
+        int asize = (xnum)*(ynum);
+        int present_index = 0;
+
+//        trueimage = new double[asize];
+//        physicalxs = new double[asize];
+//        physicalys = new double[asize];
+        samplexs = new double[asize];
+        sampleys = new double[asize];
+        
+        LinkedList<Double> x_coordinate_list = new LinkedList<Double>();
+        LinkedList<Double> y_coordinate_list = new LinkedList<Double>();
+
+        while(s.hasNextLine()){
+            String line = s.nextLine();
+            if(!line.startsWith("#")){
+                String[] linesplit = line.split(sep);
+                int x = Integer.parseInt(linesplit[0]);
+                int y = Integer.parseInt(linesplit[1]);
+                double px = Double.parseDouble(linesplit[3]);
+                double py = Double.parseDouble(linesplit[4]);
+                
+                addInOrder(x_coordinate_list, px);
+                addInOrder(y_coordinate_list, py);
+
+                //check if x,y is one of the points to be sampled
+                boolean xvalid = (x >= xstart) && (x < xstart + xnum*xstep) && ((x-xstart)%xstep == 0);
+                boolean yvalid = (y >= ystart) && (y < ystart + ynum*ystep) && ((y-ystart)%ystep == 0);
+                if(xvalid && yvalid && present_index < asize){
+                    samplexs[present_index] = px;
+                    sampleys[present_index] = py;
+                    present_index ++;
+                }
+
+            }
+        }
+        s.close();
+        
+        img_x_coordinates = new double[x_coordinate_list.size()];
+        img_y_coordinates = new double[y_coordinate_list.size()];
+        img_true = new double[x_coordinate_list.size()][y_coordinate_list.size()];
+        
+        ListIterator<Double> x_coordinate_li = x_coordinate_list.listIterator();
+        ListIterator<Double> y_coordinate_li = y_coordinate_list.listIterator();
+        
+        int index = 0;
+        while(x_coordinate_li.hasNext()){
+            img_x_coordinates[index] = x_coordinate_li.next();
+            index ++;
+        }
+        index = 0;
+        while(y_coordinate_li.hasNext()){
+            img_y_coordinates[index] = y_coordinate_li.next();
+            index ++;
+        }
+        s = new Scanner(f);
+        while(s.hasNextLine()){
+            String line = s.nextLine();
+            if(!line.startsWith("#")){
+                String[] linesplit = line.split(sep);
+                double px = Double.parseDouble(linesplit[3]);
+                double py = Double.parseDouble(linesplit[4]);
+                double current = Double.parseDouble(linesplit[5]);
+                
+                int x = findEqual(img_x_coordinates, px);
+                int y = findEqual(img_y_coordinates, py);
+                img_true[x][y] = current;
+
+            }
+        }
+        s.close();
+        
+        if(present_index != asize){
+            throw new FileNotFoundException("Expected " + asize + " points. Found: " + present_index + ".");
+        }
+        
+        sim_x_coordinates = samplexs;
+        sim_y_coordinates = sampleys;        
+    }
+    
+    /**
+     * Reads one line of http traffic, returning all bytes in the line including the trailing \r\n
      * @param input_stream
      * @return
      * @throws IOException 
@@ -917,10 +1296,32 @@ public class SecmImgSimMain {
     }
     
     /**
-     * Handles the simulation and data processing that will be used by {@link #logkToCurrent(double)} to convert rate constants to currents.
+     * Handles the simulation of SECM images
+     * @param a the ME radius
+     * @param D the diffusion coefficient
+     * @param L the dimensionless tip to substrate distance
+     * @throws IOException 
+     */
+    private static void simulateImage(double a, double Rg, double D, double L) throws IOException{
+        writeReactivityFile(img_x_coordinates, img_y_coordinates, img_kappas);
+        Model model = run(a, Rg, D, L, sim_x_coordinates, sim_y_coordinates);
+        double[] result = readData();
+        int i = 0;
+        for(int x = 0; x < sim_x_coordinates.length; x++){
+            for(int y = 0; y < sim_y_coordinates.length; y++){
+                img_sim[x][y] = result[i];
+                i++;
+            }
+        }
+        eraseDataFile();
+        
+    }
+    
+    /**
+     * Handles the simulation and data processing that will be used by {@link #logKappaToCurrent(double)} to convert rate constants to currents.
      * @param L The normalized tip to substrate distance.
      */
-    private static void simulateKCurve(double L, boolean verbose) throws IOException{
+    private static void simulateKCurve(double a, double Rg, double D, double L, boolean verbose) throws IOException{
         // generate a reactivity file where a 40.0a by 40.0a square has a reactivity of 1
         double[] xspace = new double[]{0, 200, 400};
         double[] yspace = new double[]{0, 200, 400};
@@ -928,18 +1329,18 @@ public class SecmImgSimMain {
             {1, 1, 1},
             {1, 1, 1}};
         
-        double amplitude = LOGK_HIGH - LOGK_LOW;
-        int k_datapoints = (int)amplitude;
+        double amplitude = LOG_KAPPA_HIGH - LOG_KAPPA_LOW;
+        int k_datapoints = 6;
         double[] logk_data = new double[k_datapoints];
         double[] k_data = new double[k_datapoints];
         for(int i = 0; i < k_datapoints; i++){
             double mult = ((double)i)/((double)k_datapoints);
-            logk_data[i] = mult*amplitude + LOGK_LOW;
+            logk_data[i] = mult*amplitude + LOG_KAPPA_LOW;
             k_data[i] = Math.pow(10, logk_data[i]);
         }
         
         writeReactivityFile(xspace, yspace, grid_data);
-        Model model = runk(L, xspace[1], yspace[1], k_data);
+        Model model = runk(a, Rg, D, L, xspace[1], yspace[1], k_data);
         
         ki_currents = readData();
         eraseDataFile();
@@ -949,6 +1350,31 @@ public class SecmImgSimMain {
         if(verbose){
             writeKCurve(k_data, ki_currents);
         }
+    }
+    
+    /**
+     * Checks if d1 and d2 are within a certain cutoff (1E-9) of one another
+     * @param d1
+     * @param d2
+     * @param use_relative
+     * @return 
+     */
+    private static boolean tolerantEquals(double d1, double d2, boolean use_relative){
+        double diff = Math.abs(d2-d1);
+        final double TOLERANCE = 1E-9;
+        if(use_relative){
+            double avg = 0.5*Math.abs(d1) + 0.5*Math.abs(d2);
+            if(avg >= TOLERANCE){
+                return (diff / avg) < TOLERANCE;
+            }
+            else{
+                return diff < TOLERANCE;
+            }
+        }
+        else{
+            return diff < TOLERANCE;
+        }
+        
     }
     
     /**
@@ -1005,9 +1431,11 @@ public class SecmImgSimMain {
     private static double[] ki_logks;
     
     /**
-     * Holds the image data for the k-image. Indexed as <code>img_ks[x][y]</code>.
+     * Holds the image data for the k-image. 
+     * Indexed as <code>img_kappas[x][y]</code>.
+     * In normalized units kappa = k[m/s]*a/D
      */
-    private static double[][] img_ks;
+    private static double[][] img_kappas;
     
     /**
      * Holds the image data for the true secm-image. Indexed as <code>img_sim[x][y]</code>.
@@ -1028,6 +1456,16 @@ public class SecmImgSimMain {
      * Holds the y-data for the k-image. Indexed as <code>img_y_coordinates[y]</code>.
      */
     private static double[] img_y_coordinates;
+    
+    /**
+     * Holds the x-data for the k-image. Indexed as <code>img_x_coordinates[x]</code>.
+     */
+    private static double[] sim_x_coordinates;
+    
+    /**
+     * Holds the y-data for the k-image. Indexed as <code>img_y_coordinates[y]</code>.
+     */
+    private static double[] sim_y_coordinates;
     
     /**
      * The Charset to be used when sending messages to and from the server.
@@ -1069,17 +1507,17 @@ public class SecmImgSimMain {
     /**
      * The logk value above which no change in current is expected
      */
-    private static final double LOGK_HIGH = -2;
+    private static final double LOG_KAPPA_HIGH = -2;
     
     /**
      * The logk value below which no change in current is expected
      */
-    private static final double LOGK_LOW = -6;
+    private static final double LOG_KAPPA_LOW = -6;
     
     /**
      * The maximum length of the status line or the fields in HTTP message headers
      */
-    private static final int MAX_NON_BODY_LENGTH = 4000;
+    private static final int MAX_NON_BODY_LENGTH = 512;//half a kilobyte
     
     /**
      * The port to use for communicating with the deconvolution service server.
