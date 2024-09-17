@@ -17,12 +17,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.ListIterator;
-import java.util.Random;
 import java.util.Scanner;
 
 /**
- * Collection of methods for attempts to use modified Richardson-Lucy (R-L)
- * deconvolution with scanning electrochemical microscopy (SECM) images.
+ * Collection of methods for simulating secm images and connecting to a server for data processing of results.
  * @author Nathaniel Leslie
  */
 public class SecmImgSimMain {
@@ -34,8 +32,6 @@ public class SecmImgSimMain {
      * @param ypositions 
      */
     private static Model run(double a, double Rg, double D, double L, double[] xpositions, double[] ypositions){
-        Random r = new Random();
-        r.setSeed(1234567890);
         double[] data = new double[]{
             2.961349523707295E-11,
             2.9759165579137625E-11,
@@ -52,15 +48,17 @@ public class SecmImgSimMain {
         try{
             PrintWriter pw = new PrintWriter(of);
             for(int i = 0; i < len; i++){
-                int indx = r.nextInt(data.length);
+                int indx = i % (data.length - 1);
                 pw.println(data[indx]);
             }
             pw.close();
         }
         catch(Exception e){
-            
+            e.printStackTrace();
         }
         
+        //Model model = ModelUtil.create("Model");
+        //return model;
         return new Model();
     }
     
@@ -94,6 +92,9 @@ public class SecmImgSimMain {
         catch(Exception e){
             
         }
+        
+        //Model model = ModelUtil.create("Model");
+        //return model;
         return new Model();
     }
     
@@ -123,6 +124,7 @@ public class SecmImgSimMain {
             
             //read secm image
             String filepath = "C:\\Users\\Malak\\Documents\\NLeslie\\00_DECONV_SERVER\\Testenv1_Files\\Test_Pattern_1.csv";
+//            String filepath = "Test_Pattern_1.csv";
             readInstructionFile(filepath);
             
             //simulate kcurves
@@ -130,7 +132,7 @@ public class SecmImgSimMain {
             
             //initialize kimage
             initializeKappaImage();
-            
+            writeReactivityFile(img_x_coordinates, img_y_coordinates, img_kappas);
             //PUT kcurve
             putKCurve(sender, receiver, ki_logks, ki_currents);
             
@@ -215,26 +217,47 @@ public class SecmImgSimMain {
      * @return the logk that will result in current when used as an argument for {@link #logKappaToCurrent(double)}.
      */
     static double currentToLogKappa(double current){
-        double perturbation_logk = 0.01; //the perturbation to use when approximating the derivative for #logKappaToCurrent(double).
-        double threshold = 0.005; //the threshold for determining convergence (differences in candidate logk that fall below this value will be considered converged).
-        int iterations = 8; //number of iterations of Newton's method
-        
-        double candidate_logk = 0.5*(LOG_KAPPA_HIGH - LOG_KAPPA_LOW); //initial guess for logk (should be located in the sloped portion of the k-i curve).
-        double candidate_i;
-        double derivative;
-        double old_candidate;
-        
-        do{
-            old_candidate = candidate_logk;
-            candidate_i = logKappaToCurrent(candidate_logk);
-            derivative = (logKappaToCurrent(candidate_logk + perturbation_logk) - candidate_i)/ perturbation_logk;
-            
-            candidate_logk -= (candidate_i - current)/derivative;
-            
-            iterations --;
-        }while(iterations > 0 && Math.abs(old_candidate - candidate_logk) > threshold);
-        
-        return candidate_logk;
+        int len_m1 = ki_currents.length - 1;
+        if(ki_currents[0] < ki_currents[len_m1]){//ascending order
+            if(current > ki_currents[0] && current < ki_currents[len_m1]){
+                int lower = findLower(ki_currents, current);
+                double kappa_lower = ki_logks[lower];
+                double kappa_upper = ki_logks[lower + 1];
+                double current_lower = ki_currents[lower];
+                double current_upper = ki_currents[lower + 1];
+
+                double current_distance = current_upper - current_lower;
+                double fact_lower = (current_upper - current)/current_distance;
+                double fact_upper = 1.0-fact_lower;
+                return kappa_lower*fact_lower + kappa_upper*fact_upper;
+            }
+            else if(current <= ki_currents[0]){
+                return ki_logks[0];
+            }
+            else{
+                return ki_logks[len_m1];
+            }
+        }
+        else{//descending order
+            if(current < ki_currents[0] && current > ki_currents[len_m1]){
+                int upper = findGreater(ki_currents, current);
+                double kappa_upper = ki_logks[upper];
+                double kappa_lower = ki_logks[upper + 1];
+                double current_upper = ki_currents[upper];
+                double current_lower = ki_currents[upper + 1];
+
+                double current_distance = current_upper - current_lower;
+                double fact_lower = (current_upper - current)/current_distance;
+                double fact_upper = 1.0-fact_lower;
+                return kappa_lower*fact_lower + kappa_upper*fact_upper;
+            }
+            else if(current <= ki_currents[len_m1]){
+                return ki_logks[len_m1];
+            }
+            else{
+                return ki_logks[0];
+            }
+        }
     }
     
     /**
@@ -534,7 +557,56 @@ public class SecmImgSimMain {
     }
     
     /**
-     * Binary searches through an array to find the largest index such that array[index] &lt; value.
+     * Binary searches through an descending order array to find the largest index such that array[index] &gt; value.
+     * Will return -1 if all elements of array are &lt; value
+     * @param array array of values sorted in descending order.
+     * @param value the value that is being searched-for.
+     * @return 
+     */
+    private static int findGreater(double[] array, double value){
+        if(array[0] < value){
+            return -1;
+        }
+        if(array[array.length - 1] > value){
+            return array.length - 1;
+        }
+        return findLower(array, value, 0, array.length - 1);
+    }
+    
+    /**
+     * USE {@link #findGreater(double[], double) } instead.
+     * @param array
+     * @param value
+     * @param start
+     * @param stop
+     * @return 
+     */
+    private static int findGreater(double[] array, double value, int start, int stop){
+        
+        if(stop - start == 1){
+            return start;
+        }
+        else if(stop - start == 2){
+            if(array[start + 1] > value){
+                return start + 1;
+            }
+            else{
+                return start;
+            }
+        }
+        else{
+            int mid = (stop - start)/2 + start;
+            if(array[mid] > value){
+                return findLower(array, value, mid, stop); 
+            }
+            else{
+                return findLower(array, value, start, mid);
+            }
+        }
+    }
+    
+    /**
+     * Binary searches through an ascending order array to find the largest index such that array[index] &lt; value.
      * Will return -1 if all elements of array are &gt; value
      * @param array array of values sorted in ascending order.
      * @param value the value that is being searched-for.
@@ -755,6 +827,9 @@ public class SecmImgSimMain {
         img_kappas = new double[xlen][ylen];
         for(int x = 0; x < xlen; x++){
             for(int y = 0; y < ylen; y++){
+                if(x == 0 && y == 60){
+                    System.out.println("break");
+                }
                 img_kappas[x][y] = currentToLogKappa(img_true[x][y]);
             }
         }
@@ -777,8 +852,8 @@ public class SecmImgSimMain {
             double current_upper = ki_currents[lower + 1];
             
             double kappa_distance = kappa_upper - kappa_lower;
-            double fact_lower = (log_kappa - kappa_lower)/kappa_distance;
-            double fact_upper = (kappa_upper - log_kappa)/kappa_distance;
+            double fact_lower = (kappa_upper - log_kappa)/kappa_distance;
+            double fact_upper = 1.0-fact_lower;
             return current_lower*fact_lower + current_upper*fact_upper;
         }
         else if(log_kappa <= ki_logks[0]){
@@ -1169,8 +1244,8 @@ public class SecmImgSimMain {
 //        trueimage = new double[asize];
 //        physicalxs = new double[asize];
 //        physicalys = new double[asize];
-        samplexs = new double[asize];
-        sampleys = new double[asize];
+        samplexs = new double[xnum];
+        sampleys = new double[ynum];
         
         LinkedList<Double> x_coordinate_list = new LinkedList<Double>();
         LinkedList<Double> y_coordinate_list = new LinkedList<Double>();
@@ -1191,8 +1266,10 @@ public class SecmImgSimMain {
                 boolean xvalid = (x >= xstart) && (x < xstart + xnum*xstep) && ((x-xstart)%xstep == 0);
                 boolean yvalid = (y >= ystart) && (y < ystart + ynum*ystep) && ((y-ystart)%ystep == 0);
                 if(xvalid && yvalid && present_index < asize){
-                    samplexs[present_index] = px;
-                    sampleys[present_index] = py;
+                    int x_index = (x-xstart)/xstep;
+                    int y_index = (y-ystart)/ystep;
+                    samplexs[x_index] = px;
+                    sampleys[y_index] = py;
                     present_index ++;
                 }
 
@@ -1307,6 +1384,7 @@ public class SecmImgSimMain {
         Model model = run(a, Rg, D, L, sim_x_coordinates, sim_y_coordinates);
         double[] result = readData();
         int i = 0;
+        img_sim = new double[sim_x_coordinates.length][sim_y_coordinates.length];
         for(int x = 0; x < sim_x_coordinates.length; x++){
             for(int y = 0; y < sim_y_coordinates.length; y++){
                 img_sim[x][y] = result[i];
@@ -1330,7 +1408,7 @@ public class SecmImgSimMain {
             {1, 1, 1}};
         
         double amplitude = LOG_KAPPA_HIGH - LOG_KAPPA_LOW;
-        int k_datapoints = 6;
+        int k_datapoints = 9;
         double[] logk_data = new double[k_datapoints];
         double[] k_data = new double[k_datapoints];
         for(int i = 0; i < k_datapoints; i++){
@@ -1345,10 +1423,10 @@ public class SecmImgSimMain {
         ki_currents = readData();
         eraseDataFile();
         ki_logks = new double[k_datapoints];
-        System.arraycopy(k_data, 0, ki_logks, 0, k_datapoints);
+        System.arraycopy(logk_data, 0, ki_logks, 0, k_datapoints);
         
         if(verbose){
-            writeKCurve(k_data, ki_currents);
+            writeKCurve(logk_data, ki_currents);
         }
     }
     
@@ -1389,7 +1467,7 @@ public class SecmImgSimMain {
         PrintWriter pw = new PrintWriter(f);
         pw.print("#log10(k/1[m/s]), i[A]");
         for(int i = 0; i < k_data.length; i++){
-            pw.print(String.format("\n%f,%f", k_data[i], currents[i]));
+            pw.print(String.format("\n%f,%e", k_data[i], currents[i]));
         }
         pw.close();
     }
