@@ -888,6 +888,7 @@ public class SecmImgSimMain {
         String post_header = "POST secm-image HTTP/1.1\r\n"
                 + "Date: " + getDateStamp() + "\r\n"
                 + "ETag: " + etag + "\r\n"
+                + "Content-Encoding: " + VERSION + "\r\n"
                 + "Content-Length: " + content_length + "\r\n"
                 + "Content-Type: IMAGE\r\n"
                 + "\r\n";
@@ -1004,6 +1005,7 @@ public class SecmImgSimMain {
             String put_header = "PUT k-curve HTTP/1.1\r\n" 
                     + "Date: " + getDateStamp() + "\r\n"
                     + "ETag: " + etag_new + "\r\n"
+                    + "Content-Encoding: " + VERSION + "\r\n"
                     + "Content-Length: " + content_length + "\r\n"
                     + "Content-Type: IMAGE\r\n"
                     + "\r\n";
@@ -1049,6 +1051,7 @@ public class SecmImgSimMain {
             String put_header = "PUT k-image HTTP/1.1\r\n" 
                     + "Date: " + getDateStamp() + "\r\n"
                     + "ETag: " + etag_new + "\r\n"
+                    + "Content-Encoding: " + VERSION + "\r\n"
                     + "Content-Length: " + content_length + "\r\n"
                     + "Content-Type: IMAGE\r\n"
                     + "\r\n";
@@ -1094,6 +1097,7 @@ public class SecmImgSimMain {
             String put_header = "PUT target-image HTTP/1.1\r\n" 
                     + "Date: " + getDateStamp() + "\r\n"
                     + "ETag: " + etag_new + "\r\n"
+                    + "Content-Encoding: " + VERSION + "\r\n"
                     + "Content-Length: " + content_length + "\r\n"
                     + "Content-Type: IMAGE\r\n"
                     + "\r\n";
@@ -1601,6 +1605,11 @@ public class SecmImgSimMain {
      * The port to use for communicating with the deconvolution service server.
      */
     private static final int PORT = 4091;
+    
+    /**
+     * The version of encoding that is used when communicating data to the server.
+     */
+    private static final String VERSION = "0.1";
 }
 
 class Model{
