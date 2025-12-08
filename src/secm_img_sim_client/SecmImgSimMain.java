@@ -103,6 +103,8 @@ public class SecmImgSimMain {
      */
     public static void main(String[] args){
         
+        boolean log_to_sout = true;
+        
         double L = 1.0; // Tip to substrate distance in a
         double D = 6.7E-10; //Diffusion coefficient in [m^2/s]
         double a = 2.35E-6; //ME radius in [m]
@@ -118,6 +120,9 @@ public class SecmImgSimMain {
         InputStream receiver = null;
         
         try{
+            if(log_to_sout){
+                System.out.println("[" + getDateStamp() + "] Connecting to server...");
+            }
             deconv_service_socket = new Socket(HOST, PORT);
             sender = deconv_service_socket.getOutputStream();
             receiver = deconv_service_socket.getInputStream();
@@ -125,14 +130,23 @@ public class SecmImgSimMain {
             //read secm image
             String filepath = "C:\\Users\\Malak\\Documents\\NLeslie\\00_DECONV_SERVER\\Testenv1_Files\\Test_Pattern_1.csv";
 //            String filepath = "Test_Pattern_1.csv";
+            if(log_to_sout){
+                System.out.println("[" + getDateStamp() + "] Reading from: " + filepath + "...");
+            }
             readInstructionFile(filepath);
             
             //simulate kcurves
+            if(log_to_sout){
+                System.out.println("[" + getDateStamp() + "] Simulating kcurve...");
+            }
             simulateKCurve(a, Rg, D, L, true);
             
             //initialize kimage
             initializeKappaImage();
             writeReactivityFile(img_x_coordinates, img_y_coordinates, img_kappas);
+            if(log_to_sout){
+                System.out.println("[" + getDateStamp() + "] Sending initial data to server...\n");
+            }
             //PUT kcurve
             putKCurve(sender, receiver, ki_logks, ki_currents);
             
@@ -142,15 +156,28 @@ public class SecmImgSimMain {
             //PUT true image
             putTrueSecmImage(sender, receiver, img_x_coordinates, img_y_coordinates, img_true);
             
+            final int MAX_ITERATIONS = 10;
+            int iteration = 1;
             //LOOP:
-            
+            while(iteration <= MAX_ITERATIONS){
                 //simulate SECM image
+                if(log_to_sout){
+                    System.out.println("[" + getDateStamp() + "] Simulating iteration " + iteration + "...");
+                }
                 simulateImage(a, Rg, D, L);
+                String kimgfile = "iteration_" + iteration + "_kappa.csv";
+                String simfile = "iteration_" + iteration + "_curr.csv";
+                writeKappaImage(kimgfile);
+                writeSimImage(simfile);
 
                 //POST SECM image [x]
+                if(log_to_sout){
+                    System.out.println("[" + getDateStamp() + "] Sending POST request...\n");
+                }
                 postSecmImage(sender, receiver, sim_x_coordinates, sim_y_coordinates, img_sim);
-            
-            //:END LOOP
+                
+                iteration ++;
+            }//:END LOOP
             
         }catch(Exception e){
             e.printStackTrace();
@@ -1460,6 +1487,22 @@ public class SecmImgSimMain {
     }
     
     /**
+     * Writes img_kappas out to the designated filepath.
+     * @param filepath 
+     */
+    private static void writeKappaImage(String filepath) throws IOException{
+        File f = new File(filepath);
+        f.createNewFile();
+        PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(f)));
+        pw.print("#x,y,kappa");
+        for(int x = 0; x < img_x_coordinates.length; x++){
+            for(int y = 0; y < img_y_coordinates.length; y++){
+                pw.print("\n" + img_x_coordinates[x] + "," + img_y_coordinates[y] + "," + img_kappas[x][y]);
+            }
+        }
+    }
+    
+    /**
      * Writes k-curve data to {@link #FILE_PATH_KLOG} in a comma separated values (csv) format.
      * @param k_data The logk data. Must have the same size as <code>currents</code>
      * @param currents The current data. Must have the same size as <code>k_data</code>
@@ -1500,6 +1543,22 @@ public class SecmImgSimMain {
             }
         }
         pw.close();
+    }
+    
+    /**
+     * Writes img_sim out to the designated filepath.
+     * @param filepath 
+     */
+    private static void writeSimImage(String filepath) throws IOException{
+        File f = new File(filepath);
+        f.createNewFile();
+        PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(f)));
+        pw.print("#x,y,i");
+        for(int x = 0; x < sim_x_coordinates.length; x++){
+            for(int y = 0; y < sim_y_coordinates.length; y++){
+                pw.print("\n" + sim_x_coordinates[x] + "," + sim_y_coordinates[y] + "," + img_sim[x][y]);
+            }
+        }
     }
     
     /**
@@ -1609,7 +1668,7 @@ public class SecmImgSimMain {
     /**
      * The version of encoding that is used when communicating data to the server.
      */
-    private static final String VERSION = "0.1";
+    private static final String VERSION = "0.2";
 }
 
 class Model{
