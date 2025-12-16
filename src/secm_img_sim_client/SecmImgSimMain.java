@@ -32,25 +32,20 @@ public class SecmImgSimMain {
      * @param ypositions 
      */
     private static Model run(double a, double Rg, double D, double L, double[] xpositions, double[] ypositions){
-        double[] data = new double[]{
-            2.961349523707295E-11,
-            2.9759165579137625E-11,
-            3.113409413759452E-11,
-            3.9948202563772906E-11,
-            5.547861546411381E-11,
-            6.066082017877612E-11,
-            6.170878271140456E-11,
-            6.210256176777017E-11,
-            6.215263776910492E-11,
-            6.215733984352189E-11};
-        File of = new File(FILE_PATH_DATA);
-        int len = xpositions.length * ypositions.length;
+        String fpath = "iteration_1_curr.csv";
         try{
+            File inf = new File(fpath);
+            Scanner s = new Scanner(inf);
+            File of = new File(FILE_PATH_DATA);
             PrintWriter pw = new PrintWriter(of);
-            for(int i = 0; i < len; i++){
-                int indx = i % (data.length - 1);
-                pw.println(data[indx]);
+            while(s.hasNextLine()){
+                String ln = s.nextLine();
+                if(!ln.startsWith("#")){
+                    String[] tokens = ln.split(",");
+                    pw.println(tokens[tokens.length- 1]);
+                }
             }
+            s.close();
             pw.close();
         }
         catch(Exception e){
@@ -69,28 +64,24 @@ public class SecmImgSimMain {
      * @param yposition 
      */
     private static Model runk(double a, double Rg, double D, double L, double xposition, double yposition, double[] ks){
-        double[] data = new double[]{
-            2.961349523707295E-11,
-            2.9759165579137625E-11,
-            3.113409413759452E-11,
-            3.9948202563772906E-11,
-            5.547861546411381E-11,
-            6.066082017877612E-11,
-            6.170878271140456E-11,
-            6.210256176777017E-11,
-            6.215263776910492E-11,
-            6.215733984352189E-11};
-        
-        File of = new File(FILE_PATH_DATA);
+        String fpath = "kcurve.csv";
         try{
+            File inf = new File(fpath);
+            Scanner s = new Scanner(inf);
+            File of = new File(FILE_PATH_DATA);
             PrintWriter pw = new PrintWriter(of);
-            for(int i = 0; i < ks.length; i++){
-                pw.println(data[i]);
+            while(s.hasNextLine()){
+                String ln = s.nextLine();
+                if(!ln.startsWith("#")){
+                    String[] tokens = ln.split(",");
+                    pw.println(tokens[tokens.length- 1]);
+                }
             }
+            s.close();
             pw.close();
         }
         catch(Exception e){
-            
+            e.printStackTrace();
         }
         
         //Model model = ModelUtil.create("Model");
@@ -106,9 +97,9 @@ public class SecmImgSimMain {
         boolean log_to_sout = true;
         
         double L = 1.0; // Tip to substrate distance in a
-        double D = 6.7E-10; //Diffusion coefficient in [m^2/s]
-        double a = 2.35E-6; //ME radius in [m]
-        double Rg = 1.87; // glass radius in a
+        double D = 6.5E-10; //Diffusion coefficient in [m^2/s]
+        double a = 5E-6; //ME radius in [m]
+        double Rg = 2.00; // glass radius in a
         
         /*
         https://docs.oracle.com/javase/tutorial/networking/sockets/readingWriting.html
@@ -128,7 +119,7 @@ public class SecmImgSimMain {
             receiver = deconv_service_socket.getInputStream();
             
             //read secm image
-            String filepath = "C:\\Users\\Malak\\Documents\\NLeslie\\00_DECONV_SERVER\\Testenv1_Files\\Test_Pattern_1.csv";
+            String filepath = "bb_deconvif.csv";
 //            String filepath = "Test_Pattern_1.csv";
             if(log_to_sout){
                 System.out.println("[" + getDateStamp() + "] Reading from: " + filepath + "...");
@@ -174,13 +165,13 @@ public class SecmImgSimMain {
                 if(log_to_sout){
                     System.out.println("[" + getDateStamp() + "] Sending POST request...\n");
                 }
-                postSecmImage(sender, receiver, sim_x_coordinates, sim_y_coordinates, img_sim);
+                postSecmImage(sender, receiver, sim_x_coordinates, sim_y_coordinates, img_sim, log_to_sout);
                 
                 iteration ++;
             }//:END LOOP
             
         }catch(Exception e){
-            e.printStackTrace();
+            System.out.println(e.toString());
         }finally{
             if(sender != null){
                 try{
@@ -681,6 +672,16 @@ public class SecmImgSimMain {
         }
     }
     
+	/**
+     * Fetches the current working directory.
+     * @return The absolute file path of the directory from which this program is executing, ".".
+     */
+    static String getCWD(){
+		File rmf = new File(FILE_PATH_REACTIVITY);
+		File cwd = rmf.getAbsoluteFile().getParentFile();
+		return cwd.getPath();
+    }
+    
     /**
      * Generates a timestamp loosely following ISO 8601
      * @return 
@@ -907,7 +908,7 @@ public class SecmImgSimMain {
      * @param currentimg the current image. Indexed as <code>currentimg[x][y]</code>.
      * @throws IOException Thrown when networking errors occur or an unexpected response is received from the server.
      */
-    private static void postSecmImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] currentimg) throws IOException{
+    private static void postSecmImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] currentimg, boolean log_to_sout) throws IOException{
         //POST SECM Image
         String etag = hashToString(hashImage(currentimg));
         byte[] image_data = encodeImage(xs, ys, currentimg);
@@ -933,6 +934,13 @@ public class SecmImgSimMain {
         }
         
         if(!status_line_tokens[1].equals("200")){
+			if(log_to_sout){
+				String rline = response_status_line;
+				while(!rline.equals("\r\n")){
+					//System.out.println(rline);
+					rline = new String(readLine(receiver), CHARSET);
+				}
+			}
             throw new IOException("Received unexpected status code. Expected: 200; Received: " + status_line_tokens[1]);
         }
         
@@ -1287,8 +1295,8 @@ public class SecmImgSimMain {
                 String[] linesplit = line.split(sep);
                 int x = Integer.parseInt(linesplit[0]);
                 int y = Integer.parseInt(linesplit[1]);
-                double px = Double.parseDouble(linesplit[3]);
-                double py = Double.parseDouble(linesplit[4]);
+                double px = Double.parseDouble(linesplit[2]);
+                double py = Double.parseDouble(linesplit[3]);
                 
                 addInOrder(x_coordinate_list, px);
                 addInOrder(y_coordinate_list, py);
@@ -1330,9 +1338,9 @@ public class SecmImgSimMain {
             String line = s.nextLine();
             if(!line.startsWith("#")){
                 String[] linesplit = line.split(sep);
-                double px = Double.parseDouble(linesplit[3]);
-                double py = Double.parseDouble(linesplit[4]);
-                double current = Double.parseDouble(linesplit[5]);
+                double px = Double.parseDouble(linesplit[2]);
+                double py = Double.parseDouble(linesplit[3]);
+                double current = Double.parseDouble(linesplit[4]);
                 
                 int x = findEqual(img_x_coordinates, px);
                 int y = findEqual(img_y_coordinates, py);
@@ -1412,9 +1420,22 @@ public class SecmImgSimMain {
      */
     private static void simulateImage(double a, double Rg, double D, double L) throws IOException{
         writeReactivityFile(img_x_coordinates, img_y_coordinates, img_kappas);
-        Model model = run(a, Rg, D, L, sim_x_coordinates, sim_y_coordinates);
+		
+		int samplelen = (sim_x_coordinates.length)*(sim_y_coordinates.length);
+		double[] sample_x_coordinates = new double[samplelen];
+		double[] sample_y_coordinates = new double[samplelen];
+		int i = 0;
+		for(int x = 0; x < sim_x_coordinates.length; x++){
+            for(int y = 0; y < sim_y_coordinates.length; y++){
+                sample_x_coordinates[i] = sim_x_coordinates[x];
+				sample_y_coordinates[i] = sim_y_coordinates[y];
+                i++;
+            }
+        }
+		
+        Model model = run(a, Rg, D, L, sample_x_coordinates, sample_y_coordinates);
         double[] result = readData();
-        int i = 0;
+        i = 0;
         img_sim = new double[sim_x_coordinates.length][sim_y_coordinates.length];
         for(int x = 0; x < sim_x_coordinates.length; x++){
             for(int y = 0; y < sim_y_coordinates.length; y++){
@@ -1432,8 +1453,8 @@ public class SecmImgSimMain {
      */
     private static void simulateKCurve(double a, double Rg, double D, double L, boolean verbose) throws IOException{
         // generate a reactivity file where a 40.0a by 40.0a square has a reactivity of 1
-        double[] xspace = new double[]{0, 200, 400};
-        double[] yspace = new double[]{0, 200, 400};
+        double[] xspace = new double[]{0, 20*a, 40*a};
+        double[] yspace = new double[]{0, 20*a, 40*a};
         double[][] grid_data = new double[][]{{1, 1, 1},
             {1, 1, 1},
             {1, 1, 1}};
@@ -1486,6 +1507,28 @@ public class SecmImgSimMain {
         
     }
     
+	/**
+     * Converts an array of doubles to a space separated String.
+     * @param a The array of doubles to be converted.
+     * @return A space separated String containing all of the elements of a.
+     */
+    static String toString(double[] a){
+        if(a.length > 1){
+            String sep = " ";
+            String out = "" + a[0];
+            for(int i = 1; i < a.length; i++){
+                out = out + sep + a[i];
+            }
+            return out;
+        }
+        else if(a.length == 1){
+            return "" + a[0];
+        }
+        else{
+            return "";
+        }
+    }
+    
     /**
      * Writes img_kappas out to the designated filepath.
      * @param filepath 
@@ -1500,6 +1543,7 @@ public class SecmImgSimMain {
                 pw.print("\n" + img_x_coordinates[x] + "," + img_y_coordinates[y] + "," + img_kappas[x][y]);
             }
         }
+		pw.close();
     }
     
     /**
@@ -1531,8 +1575,8 @@ public class SecmImgSimMain {
         File f = new File(FILE_PATH_REACTIVITY);
         f.createNewFile();
         PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(f)));
-        for(int x = 0; x < xs.length; x++){
-            for(int y = 0; y < ys.length; y++){
+        for(int x = 0; x < xs.length - 1; x++){
+            for(int y = 0; y < ys.length - 1; y++){
                 double k = Math.pow(10, logks[x][y]);
                 if(x != 0 || y != 0){
                     pw.print("\n" + xs[x] + "," + ys[y] + "," + k);
@@ -1559,6 +1603,7 @@ public class SecmImgSimMain {
                 pw.print("\n" + sim_x_coordinates[x] + "," + sim_y_coordinates[y] + "," + img_sim[x][y]);
             }
         }
+		pw.close();
     }
     
     /**
