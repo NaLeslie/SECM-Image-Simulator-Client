@@ -96,7 +96,7 @@ public class SecmImgSimMain {
         
         boolean log_to_sout = true;
         
-        double L = 1.0; // Tip to substrate distance in a
+        double L = 0.8; // Tip to substrate distance in a
         double D = 6.5E-10; //Diffusion coefficient in [m^2/s]
         double a = 5E-6; //ME radius in [m]
         double Rg = 2.00; // glass radius in a
@@ -141,6 +141,13 @@ public class SecmImgSimMain {
             //PUT kcurve
             putKCurve(sender, receiver, ki_logks, ki_currents);
             
+            double min_i = ki_currents[0];
+            for(int i = 1; i < ki_currents.length; i++){
+                if(ki_currents[i] < min_i){
+                    min_i = ki_currents[i];
+                }
+            }
+            
             //PUT kimage
             putKImage(sender, receiver, img_x_coordinates, img_y_coordinates, img_kappas);
             
@@ -165,7 +172,35 @@ public class SecmImgSimMain {
                 if(log_to_sout){
                     System.out.println("[" + getDateStamp() + "] Sending POST request...\n");
                 }
-                postSecmImage(sender, receiver, sim_x_coordinates, sim_y_coordinates, img_sim, log_to_sout);
+                
+                //PAD the simulated currents before sending the image over...
+                int xlen = sim_x_coordinates.length;
+                int ylen = sim_y_coordinates.length;
+                
+                double[] pad_x = new double[xlen + 2];
+                double[] pad_y = new double[ylen + 2];
+                double[][] pad_img = new double[xlen + 2][ylen + 2];
+                
+                System.arraycopy(sim_x_coordinates, 0, pad_x, 1, xlen);
+                pad_x[0] = 2.0*sim_x_coordinates[0] - sim_x_coordinates[1];
+                pad_x[xlen+1] = 2.0*sim_x_coordinates[xlen-1] - sim_x_coordinates[xlen-2];
+                System.arraycopy(sim_y_coordinates, 0, pad_y, 1, ylen);
+                pad_y[0] = 2.0*sim_y_coordinates[0] - sim_y_coordinates[1];
+                pad_y[ylen+1] = 2.0*sim_y_coordinates[ylen-1] - sim_y_coordinates[ylen-2];
+                
+                for(int y = 0; y < ylen+2; y++){
+                    pad_img[0][y] = min_i;
+                    pad_img[xlen+1][y] = min_i;
+                }
+                for(int x = 1; x < xlen+1; x++){
+                    pad_img[x][0] = min_i;
+                    pad_img[x][ylen+1] = min_i;
+                    for(int y = 1; y < ylen+1; y++){
+                        pad_img[x][y] = img_sim[x-1][y-1];
+                    }
+                }
+                
+                postSecmImage(sender, receiver, pad_x, pad_y, pad_img, log_to_sout);
                 
                 iteration ++;
             }//:END LOOP
@@ -582,13 +617,13 @@ public class SecmImgSimMain {
      * @return 
      */
     private static int findGreater(double[] array, double value){
-        if(array[0] < value){
-            return -1;
+        if(array[0] > value){
+            return 0;
         }
-        if(array[array.length - 1] > value){
+        if(array[array.length - 1] < value){
             return array.length - 1;
         }
-        return findLower(array, value, 0, array.length - 1);
+        return findGreater(array, value, 0, array.length - 1);
     }
     
     /**
@@ -602,23 +637,23 @@ public class SecmImgSimMain {
     private static int findGreater(double[] array, double value, int start, int stop){
         
         if(stop - start == 1){
-            return start;
+            return stop;
         }
         else if(stop - start == 2){
             if(array[start + 1] > value){
                 return start + 1;
             }
             else{
-                return start;
+                return stop;
             }
         }
         else{
             int mid = (stop - start)/2 + start;
-            if(array[mid] > value){
-                return findLower(array, value, mid, stop); 
+            if(array[mid] < value){
+                return findGreater(array, value, mid, stop); 
             }
             else{
-                return findLower(array, value, start, mid);
+                return findGreater(array, value, start, mid);
             }
         }
     }
@@ -1460,11 +1495,11 @@ public class SecmImgSimMain {
             {1, 1, 1}};
         
         double amplitude = LOG_KAPPA_HIGH - LOG_KAPPA_LOW;
-        int k_datapoints = 9;
+        int k_datapoints = 12;
         double[] logk_data = new double[k_datapoints];
         double[] k_data = new double[k_datapoints];
         for(int i = 0; i < k_datapoints; i++){
-            double mult = ((double)i)/((double)k_datapoints);
+            double mult = ((double)i)/((double)(k_datapoints-1));
             logk_data[i] = mult*amplitude + LOG_KAPPA_LOW;
             k_data[i] = Math.pow(10, logk_data[i]);
         }
@@ -1693,12 +1728,12 @@ public class SecmImgSimMain {
     /**
      * The logk value above which no change in current is expected
      */
-    private static final double LOG_KAPPA_HIGH = -2;
+    private static final double LOG_KAPPA_HIGH = 0;
     
     /**
      * The logk value below which no change in current is expected
      */
-    private static final double LOG_KAPPA_LOW = -6;
+    private static final double LOG_KAPPA_LOW = -8;
     
     /**
      * The maximum length of the status line or the fields in HTTP message headers
