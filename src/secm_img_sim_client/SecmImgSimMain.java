@@ -134,7 +134,7 @@ public class SecmImgSimMain {
             
             //initialize kimage
             initializeKappaImage();
-            writeReactivityFile(img_x_coordinates, img_y_coordinates, img_kappas);
+            writeReactivityFile(img_x_coordinates, img_y_coordinates, img_kappas, 0.0);
             if(log_to_sout){
                 System.out.println("[" + getDateStamp() + "] Sending initial data to server...\n");
             }
@@ -158,11 +158,30 @@ public class SecmImgSimMain {
             int iteration = 1;
             //LOOP:
             while(iteration <= MAX_ITERATIONS){
+                final double LOGK_PERTURBATION = 0.01;
                 //simulate SECM image
                 if(log_to_sout){
-                    System.out.println("[" + getDateStamp() + "] Simulating iteration " + iteration + "...");
+                    System.out.println("[" + getDateStamp() + "] Simulating iteration " + iteration + " part 1/2...");
                 }
-                simulateImage(a, Rg, D, L);
+                simulateImage(a, Rg, D, L, LOGK_PERTURBATION);
+                int xlen = img_sim.length;
+                int ylen = img_sim[0].length;
+                double[][] derivative = new double[xlen][ylen];
+                for(int x = 0; x < xlen; x++){
+                    for(int y = 0; y < ylen; y++){
+                        derivative[x][y] = img_sim[x][y];
+                    }
+                }
+                if(log_to_sout){
+                    System.out.println("[" + getDateStamp() + "] Simulating iteration " + iteration + " part 2/2...");
+                }
+                simulateImage(a, Rg, D, L, 0.0);
+                for(int x = 0; x < xlen; x++){
+                    for(int y = 0; y < ylen; y++){
+                        double perturbed_i = derivative[x][y];
+                        derivative[x][y] = (perturbed_i - img_sim[x][y])/LOGK_PERTURBATION;
+                    }
+                }
                 String kimgfile = "iteration_" + iteration + "_kappa.csv";
                 String simfile = "iteration_" + iteration + "_curr.csv";
                 writeKappaImage(kimgfile);
@@ -174,12 +193,13 @@ public class SecmImgSimMain {
                 }
                 
                 //PAD the simulated currents before sending the image over...
-                int xlen = sim_x_coordinates.length;
-                int ylen = sim_y_coordinates.length;
+                xlen = sim_x_coordinates.length;
+                ylen = sim_y_coordinates.length;
                 
                 double[] pad_x = new double[xlen + 2];
                 double[] pad_y = new double[ylen + 2];
                 double[][] pad_img = new double[xlen + 2][ylen + 2];
+                double[][] pad_derivative = new double[xlen + 2][ylen + 2];
                 
                 System.arraycopy(sim_x_coordinates, 0, pad_x, 1, xlen);
                 pad_x[0] = 2.0*sim_x_coordinates[0] - sim_x_coordinates[1];
@@ -190,11 +210,15 @@ public class SecmImgSimMain {
                 
                 for(int y = 0; y < ylen+2; y++){
                     pad_img[0][y] = min_i;
+                    pad_derivative[0][y] = 0.0;
                     pad_img[xlen+1][y] = min_i;
+                    pad_derivative[xlen+1][y] = 0.0;
                 }
                 for(int x = 1; x < xlen+1; x++){
                     pad_img[x][0] = min_i;
+                    pad_derivative[x][0] = 0.0;
                     pad_img[x][ylen+1] = min_i;
+                    pad_derivative[x][ylen+1] = 0.0;
                     for(int y = 1; y < ylen+1; y++){
                         pad_img[x][y] = img_sim[x-1][y-1];
                     }
@@ -1453,14 +1477,14 @@ public class SecmImgSimMain {
      * @param L the dimensionless tip to substrate distance
      * @throws IOException 
      */
-    private static void simulateImage(double a, double Rg, double D, double L) throws IOException{
-        writeReactivityFile(img_x_coordinates, img_y_coordinates, img_kappas);
+    private static void simulateImage(double a, double Rg, double D, double L, double logk_perturb) throws IOException{
+        writeReactivityFile(img_x_coordinates, img_y_coordinates, img_kappas, logk_perturb);
 		
-		int samplelen = (sim_x_coordinates.length)*(sim_y_coordinates.length);
-		double[] sample_x_coordinates = new double[samplelen];
-		double[] sample_y_coordinates = new double[samplelen];
-		int i = 0;
-		for(int x = 0; x < sim_x_coordinates.length; x++){
+        int samplelen = (sim_x_coordinates.length)*(sim_y_coordinates.length);
+        double[] sample_x_coordinates = new double[samplelen];
+        double[] sample_y_coordinates = new double[samplelen];
+        int i = 0;
+        for(int x = 0; x < sim_x_coordinates.length; x++){
             for(int y = 0; y < sim_y_coordinates.length; y++){
                 sample_x_coordinates[i] = sim_x_coordinates[x];
 				sample_y_coordinates[i] = sim_y_coordinates[y];
@@ -1504,7 +1528,7 @@ public class SecmImgSimMain {
             k_data[i] = Math.pow(10, logk_data[i]);
         }
         
-        writeReactivityFile(xspace, yspace, grid_data);
+        writeReactivityFile(xspace, yspace, grid_data, 0.0);
         Model model = runk(a, Rg, D, L, xspace[1], yspace[1], k_data);
         
         ki_currents = readData();
@@ -1606,13 +1630,13 @@ public class SecmImgSimMain {
      * @param logks The k-image data. Indexed as <code>logks[x][y]</code>.
      * @throws IOException If the {@link #FILE_PATH_KLOG} cannot be created or written to.
      */
-    private static void writeReactivityFile(double[] xs, double[] ys, double[][] logks) throws IOException{
+    private static void writeReactivityFile(double[] xs, double[] ys, double[][] logks, double logk_perturb) throws IOException{
         File f = new File(FILE_PATH_REACTIVITY);
         f.createNewFile();
         PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(f)));
         for(int x = 0; x < xs.length - 1; x++){
             for(int y = 0; y < ys.length - 1; y++){
-                double k = Math.pow(10, logks[x][y]);
+                double k = Math.pow(10, logks[x][y] + logk_perturb);
                 if(x != 0 || y != 0){
                     pw.print("\n" + xs[x] + "," + ys[y] + "," + k);
                 }
