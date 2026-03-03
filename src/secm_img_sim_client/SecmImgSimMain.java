@@ -149,10 +149,10 @@ public class SecmImgSimMain {
             }
             
             //PUT kimage
-            putKImage(sender, receiver, img_x_coordinates, img_y_coordinates, img_kappas);
+            putImage(sender, receiver, "k-image", img_x_coordinates, img_y_coordinates, img_kappas);
             
             //PUT true image
-            putTrueSecmImage(sender, receiver, img_x_coordinates, img_y_coordinates, img_true);
+            putImage(sender, receiver, "target-image", img_x_coordinates, img_y_coordinates, img_true);
             
             final int MAX_ITERATIONS = 10;
             int iteration = 1;
@@ -221,9 +221,12 @@ public class SecmImgSimMain {
                     pad_derivative[x][ylen+1] = 0.0;
                     for(int y = 1; y < ylen+1; y++){
                         pad_img[x][y] = img_sim[x-1][y-1];
+                        pad_derivative[x][y] = derivative[x-1][y-1];
                     }
                 }
                 
+                //PUT derivatives and POST secm image
+                putImage(sender, receiver, "derivative-image", pad_x, pad_y, pad_derivative);
                 postSecmImage(sender, receiver, pad_x, pad_y, pad_img, log_to_sout);
                 
                 iteration ++;
@@ -731,7 +734,7 @@ public class SecmImgSimMain {
         }
     }
     
-	/**
+    /**
      * Fetches the current working directory.
      * @return The absolute file path of the directory from which this program is executing, ".".
      */
@@ -1066,6 +1069,52 @@ public class SecmImgSimMain {
     }
     
     /**
+     * Handles the process of sending a PUT request for the an image to the server.
+     * This starts by calling {@link #getETag(java.io.OutputStream, java.io.InputStream, java.lang.String)} to check the copy of the image on the server by making a HEAD request and comparing the ETag to the hash of the image.
+     * If the ETag and hash match, the server is up-to-date and the data is not sent over.
+     * If the ETag does not match or a 404 Not Found response is received, a PUT request is made, sending the k-image data on to the server.
+     * {@link #processPutResponse(java.io.InputStream)} is used to ensure the server received the data correctly.
+     * @param sender The OutputStream to the server.
+     * @param receiver The InputStream from the server.
+     * @param xs The x position data. Indexed as <code>xs[x]</code>.
+     * @param ys The y position data. Indexed as <code>ys[y]</code>.
+     * @param imgdata The image data. Indexed as <code>logkimg[x][y]</code>.
+     * @throws IOException Will be thrown if there are any errors when contacting the server or if an unexpected response is received.
+     */
+    private static void putImage(OutputStream sender, InputStream receiver, String object_name, double[] xs, double[] ys, double[][] imgdata) throws IOException{
+        /*
+        HEAD image
+            if 200 OK received compare recieved hash to image's hash
+            if 204 No Content received OR the hashes do not match, send kurve data over
+        */
+        //HEAD image
+        String etag_new = hashToString(hashImage(imgdata));
+        String etag_cached = getETag(sender, receiver, object_name);
+        //if 200 OK received compare recieved hash to curve's hash
+        //if 404 Not Found received OR the hashes do not match, send kurve data over
+        boolean send_image = true;
+        if(etag_cached != null){
+            send_image = !etag_cached.equals(etag_new);
+        }
+        if(send_image){
+            byte[] image_data = encodeImage(xs, ys, imgdata);
+            int content_length = image_data.length;
+            String put_header = "PUT " + object_name + " HTTP/1.1\r\n" 
+                    + "Date: " + getDateStamp() + "\r\n"
+                    + "ETag: " + etag_new + "\r\n"
+                    + "Content-Encoding: " + VERSION + "\r\n"
+                    + "Content-Length: " + content_length + "\r\n"
+                    + "Content-Type: IMAGE\r\n"
+                    + "\r\n";
+            sender.write(put_header.getBytes(CHARSET));
+            sender.write(image_data);
+            sender.flush();
+            
+            processPutResponse(receiver);
+        }
+    }
+    
+    /**
      * Handles the process of sending a PUT request for the k-curve to the server.
      * This starts by calling {@link #getETag(java.io.OutputStream, java.io.InputStream, java.lang.String)} to check the copy of the k-curve on the server by making a HEAD request and comparing the ETag to the hash of the k-curve.
      * If the ETag and hash match, the server is up-to-date and the data is not sent over.
@@ -1105,98 +1154,6 @@ public class SecmImgSimMain {
                     + "\r\n";
             sender.write(put_header.getBytes(CHARSET));
             sender.write(curve_data);
-            sender.flush();
-            
-            processPutResponse(receiver);
-        }
-    }
-    
-    /**
-     * Handles the process of sending a PUT request for the k-image to the server.
-     * This starts by calling {@link #getETag(java.io.OutputStream, java.io.InputStream, java.lang.String)} to check the copy of the k-image on the server by making a HEAD request and comparing the ETag to the hash of the k-image.
-     * If the ETag and hash match, the server is up-to-date and the data is not sent over.
-     * If the ETag does not match or a 404 Not Found response is received, a PUT request is made, sending the k-image data on to the server.
-     * {@link #processPutResponse(java.io.InputStream)} is used to ensure the server received the data correctly.
-     * @param sender The OutputStream to the server.
-     * @param receiver The InputStream from the server.
-     * @param xs The x position data. Indexed as <code>xs[x]</code>.
-     * @param ys The y position data. Indexed as <code>ys[y]</code>.
-     * @param logkimg The k-image data. Indexed as <code>logkimg[x][y]</code>.
-     * @throws IOException Will be thrown if there are any errors when contacting the server or if an unexpected response is received.
-     */
-    private static void putKImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] logkimg) throws IOException{
-        /*
-        HEAD image
-            if 200 OK received compare recieved hash to image's hash
-            if 204 No Content received OR the hashes do not match, send kurve data over
-        */
-        //HEAD image
-        String etag_new = hashToString(hashImage(logkimg));
-        String etag_cached = getETag(sender, receiver, "k-image");
-        //if 200 OK received compare recieved hash to curve's hash
-        //if 404 Not Found received OR the hashes do not match, send kurve data over
-        boolean send_image = true;
-        if(etag_cached != null){
-            send_image = !etag_cached.equals(etag_new);
-        }
-        if(send_image){
-            byte[] image_data = encodeImage(xs, ys, logkimg);
-            int content_length = image_data.length;
-            String put_header = "PUT k-image HTTP/1.1\r\n" 
-                    + "Date: " + getDateStamp() + "\r\n"
-                    + "ETag: " + etag_new + "\r\n"
-                    + "Content-Encoding: " + VERSION + "\r\n"
-                    + "Content-Length: " + content_length + "\r\n"
-                    + "Content-Type: IMAGE\r\n"
-                    + "\r\n";
-            sender.write(put_header.getBytes(CHARSET));
-            sender.write(image_data);
-            sender.flush();
-            
-            processPutResponse(receiver);
-        }
-    }
-    
-    /**
-     * Handles the process of sending a PUT request for the k-image to the server.
-     * This starts by calling {@link #getETag(java.io.OutputStream, java.io.InputStream, java.lang.String)} to check the copy of the k-image on the server by making a HEAD request and comparing the ETag to the hash of the k-image.
-     * If the ETag and hash match, the server is up-to-date and the data is not sent over.
-     * If the ETag does not match or a 404 Not Found response is received, a PUT request is made, sending the k-image data on to the server.
-     * {@link #processPutResponse(java.io.InputStream)} is used to ensure the server received the data correctly.
-     * @param sender The OutputStream to the server.
-     * @param receiver The InputStream from the server.
-     * @param xs The x position data. Indexed as <code>xs[x]</code>.
-     * @param ys The y position data. Indexed as <code>ys[y]</code>.
-     * @param trueimg The true secm image data. Indexed as <code>trueimg[x][y]</code>.
-     * @throws IOException Will be thrown if there are any errors when contacting the server or if an unexpected response is received.
-     */
-    private static void putTrueSecmImage(OutputStream sender, InputStream receiver, double[] xs, double[] ys, double[][] trueimg) throws IOException{
-        /*
-        HEAD image
-            if 200 OK received compare recieved hash to image's hash
-            if 404 Not Found received OR the hashes do not match, send target image data over
-        */
-        //HEAD image
-        String etag_new = hashToString(hashImage(trueimg));
-        String etag_cached = getETag(sender, receiver, "target-image");
-        //if 200 OK received compare recieved hash to curve's hash
-        //if 404 Not Found received OR the hashes do not match, send target image data over
-        boolean send_image = true;
-        if(etag_cached != null){
-            send_image = !etag_cached.equals(etag_new);
-        }
-        if(send_image){
-            byte[] image_data = encodeImage(xs, ys, trueimg);
-            int content_length = image_data.length;
-            String put_header = "PUT target-image HTTP/1.1\r\n" 
-                    + "Date: " + getDateStamp() + "\r\n"
-                    + "ETag: " + etag_new + "\r\n"
-                    + "Content-Encoding: " + VERSION + "\r\n"
-                    + "Content-Length: " + content_length + "\r\n"
-                    + "Content-Type: IMAGE\r\n"
-                    + "\r\n";
-            sender.write(put_header.getBytes(CHARSET));
-            sender.write(image_data);
             sender.flush();
             
             processPutResponse(receiver);
@@ -1566,7 +1523,7 @@ public class SecmImgSimMain {
         
     }
     
-	/**
+    /**
      * Converts an array of doubles to a space separated String.
      * @param a The array of doubles to be converted.
      * @return A space separated String containing all of the elements of a.
