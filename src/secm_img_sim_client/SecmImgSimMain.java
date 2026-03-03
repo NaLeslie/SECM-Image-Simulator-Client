@@ -183,9 +183,11 @@ public class SecmImgSimMain {
                     }
                 }
                 String kimgfile = "iteration_" + iteration + "_kappa.csv";
+                String derivativefile = "iteration_" + iteration + "_derivative.csv";
                 String simfile = "iteration_" + iteration + "_curr.csv";
-                writeKappaImage(kimgfile);
-                writeSimImage(simfile);
+                writeImage(kimgfile, "logk", img_x_coordinates, img_y_coordinates, img_kappas);
+                writeImage(simfile, "i", sim_x_coordinates, sim_y_coordinates, img_sim);
+                writeImage(derivativefile, "di/dlogk", sim_x_coordinates, sim_y_coordinates, derivative);
 
                 //POST SECM image [x]
                 if(log_to_sout){
@@ -1546,20 +1548,25 @@ public class SecmImgSimMain {
     }
     
     /**
-     * Writes img_kappas out to the designated filepath.
-     * @param filepath 
+     * Writes img_data out to the designated filepath.
+     * @param filepath
+     * @param data_label
+     * @param x_coordinates
+     * @param y_coordinates
+     * @param img_data
+     * @throws IOException 
      */
-    private static void writeKappaImage(String filepath) throws IOException{
+    private static void writeImage(String filepath, String data_label, double[] x_coordinates, double[] y_coordinates, double[][] img_data) throws IOException{
         File f = new File(filepath);
         f.createNewFile();
         PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(f)));
-        pw.print("#x,y,kappa");
-        for(int x = 0; x < img_x_coordinates.length; x++){
-            for(int y = 0; y < img_y_coordinates.length; y++){
-                pw.print("\n" + img_x_coordinates[x] + "," + img_y_coordinates[y] + "," + img_kappas[x][y]);
+        pw.print("#x,y," + data_label);
+        for(int x = 0; x < x_coordinates.length; x++){
+            for(int y = 0; y < y_coordinates.length; y++){
+                pw.print("\n" + x_coordinates[x] + "," + y_coordinates[y] + "," + img_data[x][y]);
             }
         }
-		pw.close();
+	pw.close();
     }
     
     /**
@@ -1603,23 +1610,6 @@ public class SecmImgSimMain {
             }
         }
         pw.close();
-    }
-    
-    /**
-     * Writes img_sim out to the designated filepath.
-     * @param filepath 
-     */
-    private static void writeSimImage(String filepath) throws IOException{
-        File f = new File(filepath);
-        f.createNewFile();
-        PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(f)));
-        pw.print("#x,y,i");
-        for(int x = 0; x < sim_x_coordinates.length; x++){
-            for(int y = 0; y < sim_y_coordinates.length; y++){
-                pw.print("\n" + sim_x_coordinates[x] + "," + sim_y_coordinates[y] + "," + img_sim[x][y]);
-            }
-        }
-		pw.close();
     }
     
     /**
