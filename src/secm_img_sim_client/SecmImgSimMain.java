@@ -163,6 +163,9 @@ public class SecmImgSimMain {
                 if(log_to_sout){
                     System.out.println("[" + getDateStamp() + "] Simulating iteration " + iteration + " part 1/2...");
                 }
+                String kimgfile = "iteration_" + iteration + "_kappa.csv";
+                writeImage(kimgfile, "logk", img_x_coordinates, img_y_coordinates, img_kappas);
+                
                 simulateImage(a, Rg, D, L, LOGK_PERTURBATION);
                 int xlen = img_sim.length;
                 int ylen = img_sim[0].length;
@@ -182,10 +185,9 @@ public class SecmImgSimMain {
                         derivative[x][y] = (perturbed_i - img_sim[x][y])/LOGK_PERTURBATION;
                     }
                 }
-                String kimgfile = "iteration_" + iteration + "_kappa.csv";
+                
                 String derivativefile = "iteration_" + iteration + "_derivative.csv";
                 String simfile = "iteration_" + iteration + "_curr.csv";
-                writeImage(kimgfile, "logk", img_x_coordinates, img_y_coordinates, img_kappas);
                 writeImage(simfile, "i", sim_x_coordinates, sim_y_coordinates, img_sim);
                 writeImage(derivativefile, "di/dlogk", sim_x_coordinates, sim_y_coordinates, derivative);
 
