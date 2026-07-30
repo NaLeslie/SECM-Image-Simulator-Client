@@ -44,7 +44,7 @@ Image `(x,y,signal)` and curve `(x,signal)` data are exchanged between the progr
 "ylen: " + \[ Number of y points (in ASCII) \] + "\\ r \\n"  
 \[ Binary data containing x coordinates \] + "\\ r \\n"  
 \[ Binary data containing y coordinates \] + "\\ r \\n"  
-\[ Binary data containing unraveled image signals \] + "\\ r \\n"
+\[ Binary data containing unraveled (arranged as a list of (lists of data along the y direction) along the x direction) image signals \] + "\\ r \\n"
 
 ## Publication
 This work is associated with the publication:  
